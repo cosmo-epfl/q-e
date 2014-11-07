@@ -169,6 +169,7 @@ MODULE control_flags
     lscf    =.FALSE., &! if .TRUE. the calc. is selfconsistent
     lbfgs   =.FALSE., &! if .TRUE. the calc. is a relaxation based on BFGS
     lmd     =.FALSE., &! if .TRUE. the calc. is a dynamics
+    ldriver =.FALSE., &! if .TRUE. run in driver mode
     llang   =.FALSE., &! if .TRUE. the calc. is Langevin dynamics
     use_SMC =.FALSE., &! if .TRUE. use the Smart Monte Carlo method
     lwf     =.FALSE., &! if .TRUE. the calc. is with wannier functions

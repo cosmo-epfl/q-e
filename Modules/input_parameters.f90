@@ -153,6 +153,10 @@ MODULE input_parameters
           ! specify the prefix for the output file, if not specified the
           ! files are opened as standard fortran units.
 
+        CHARACTER(len=1024) :: srvaddress = 'localhost:31415'
+          ! specify the hostname:port of the socket opened on the server side
+          ! to run in driver mode.
+          
         CHARACTER(len=256) :: pseudo_dir = './'
           ! specify the directory containing the pseudopotentials
 
@@ -278,8 +282,8 @@ MODULE input_parameters
           forc_conv_thr, pseudo_dir, disk_io, tefield, dipfield, lberry,  &
           gdir, nppstr, wf_collect, printwfc, lelfield, nberrycyc, refg,  &
           tefield2, saverho, tabps, lkpoint_dir, use_wannier, lecrpa,     &
-          tqmmm, vdw_table_name, lorbm, memory, point_label_type,         &
-          lcalc_z2, z2_m_threshold, z2_z_threshold
+          tqmmm, vdw_table_name, srvaddress, lorbm, memory,               &
+          point_label_type, lcalc_z2, z2_m_threshold, z2_z_threshold
 
 !
 !=----------------------------------------------------------------------------=!

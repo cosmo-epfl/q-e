@@ -75,7 +75,8 @@ SUBROUTINE iosys()
   USE io_files,      ONLY : input_drho, output_drho, &
                             psfile, tmp_dir, wfc_dir, &
                             prefix_     => prefix, &
-                            pseudo_dir_ => pseudo_dir
+                            pseudo_dir_ => pseudo_dir, &
+                            srvaddress_ => srvaddress
   !
   USE force_mod,     ONLY : lforce, lstres, force
   !
@@ -144,8 +145,8 @@ SUBROUTINE iosys()
                             lkpoint_dir_      => lkpoint_dir, &
                             tqr_              => tqr, &
                             io_level, ethr, lscf, lbfgs, lmd, &
-                            ldamped, lbands, llang, use_SMC,  &
-                            lconstrain, restart, twfcollect, &
+                            ldamped, lbands, llang, ldriver, &
+                            lconstrain, restart, twfcollect, use_SMC, &
                             llondon, do_makov_payne, lxdm, &
                             ts_vdw_           => ts_vdw, &
                             lecrpa_           => lecrpa, &
@@ -201,7 +202,7 @@ SUBROUTINE iosys()
                                pseudo_dir, disk_io, tefield, dipfield, lberry, &
                                gdir, nppstr, wf_collect,lelfield,lorbm,efield, &
                                nberrycyc, lkpoint_dir, efield_cart, lecrpa,    &
-                               vdw_table_name, memory, tqmmm,                  &
+                               srvaddress, vdw_table_name, memory, tqmmm,      &
                                lcalc_z2, z2_m_threshold, z2_z_threshold,       &
                                efield_phase
 
@@ -367,6 +368,14 @@ SUBROUTINE iosys()
                    & ' not supported', 1 )
      END SELECT
      !
+  CASE( 'driver' )
+     !
+     ldriver   = .true.
+     lscf      = .true.
+     lforce    = .true.
+     lstres    = .true.
+     lmd       = .true.
+     !
   CASE( 'vc-relax' )
      !
      lscf      = .true.
@@ -456,7 +465,7 @@ SUBROUTINE iosys()
      !
   END SELECT
   !
-  lstres = lmovecell .OR. ( tstress .and. lscf )
+  lstres = ldriver .or. lmovecell .OR. ( tstress .and. lscf )
   !
   IF ( tefield .and. ( .not. nosym ) ) THEN
      nosym = .true.
@@ -1073,6 +1082,7 @@ SUBROUTINE iosys()
   dipfield_   = dipfield
   prefix_     = trim( prefix )
   pseudo_dir_ = trimcheck( pseudo_dir )
+  srvaddress_ = trim(srvaddress)
   nstep_      = nstep
   iprint_     = iprint
   lecrpa_     = lecrpa

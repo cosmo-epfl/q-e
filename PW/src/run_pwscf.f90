@@ -29,7 +29,7 @@ SUBROUTINE run_pwscf ( exit_status )
   USE io_global,        ONLY : stdout, ionode, ionode_id
   USE parameters,       ONLY : ntypx, npk, lmaxx
   USE cell_base,        ONLY : fix_volume, fix_area
-  USE control_flags,    ONLY : conv_elec, gamma_only, lscf, twfcollect
+  USE control_flags,    ONLY : conv_elec, gamma_only, lscf, ldriver, twfcollect
   USE control_flags,    ONLY : conv_ions, istep, nstep, restart, lmd, lbfgs
   USE force_mod,        ONLY : lforce, lstres, sigma, force
   USE check_stop,       ONLY : check_stop_init, check_stop_now
@@ -68,6 +68,11 @@ SUBROUTINE run_pwscf ( exit_status )
   CALL setup ()
   !
   CALL qmmm_update_positions()
+  !
+  if (ldriver) THEN 
+    CALL driver()
+    GOTO 111
+  end if
   !
   CALL init_run()
   !
@@ -163,7 +168,7 @@ SUBROUTINE run_pwscf ( exit_status )
   ! ... save final data file
   !
   IF ( .not. lmd) CALL pw2casino()
-  CALL punch('all')
+111  CALL punch('all')
   !
   CALL qmmm_shutdown()
   !

@@ -496,7 +496,7 @@ SUBROUTINE extrapolate_wfcs( wfc_extr )
   !
   CALL mp_barrier( intra_image_comm ) ! debug
   !
-  IF ( wfc_extr == 1 ) THEN
+  IF ( wfc_extr .le. 1 ) THEN
      !
      CALL diropn( iunoldwfc, 'oldwfc', 2*nwordwfc, exst )
      !

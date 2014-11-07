@@ -660,6 +660,7 @@ MODULE read_namelists_module
        CALL mp_bcast( outdir,        ionode_id, intra_image_comm )
        CALL mp_bcast( wfcdir,        ionode_id, intra_image_comm )
        CALL mp_bcast( prefix,        ionode_id, intra_image_comm )
+       CALL mp_bcast( srvaddress,    ionode_id, intra_image_comm ) 
        CALL mp_bcast( max_seconds,   ionode_id, intra_image_comm )
        CALL mp_bcast( ekin_conv_thr, ionode_id, intra_image_comm )
        CALL mp_bcast( etot_conv_thr, ionode_id, intra_image_comm )
@@ -1647,6 +1648,9 @@ MODULE read_namelists_module
                 ion_dynamics = 'beeman'
              END IF
              !
+          CASE ( 'driver' )
+             !do nothing
+             !             
           CASE DEFAULT
              !
              CALL errore( sub_name,' calculation '// &
@@ -1806,6 +1810,7 @@ MODULE read_namelists_module
        IF ( ionode ) THEN
           !
           IF ( TRIM( calculation ) == 'relax'    .OR. &
+               TRIM( calculation ) == 'driver'   .OR. &
                TRIM( calculation ) == 'md'       .OR. &
                TRIM( calculation ) == 'vc-relax' .OR. &
                TRIM( calculation ) == 'vc-md'    .OR. &
