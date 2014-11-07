@@ -65,40 +65,52 @@ Args:
 */
 
 {
-   int sockfd, portno, n;
-   struct hostent *server;
-
-   struct sockaddr * psock; int ssock;
+   int sockfd, ai_err;
 
    if (*inet>0)
    {  // creates an internet socket
-      struct sockaddr_in serv_addr;      psock=(struct sockaddr *)&serv_addr;     ssock=sizeof(serv_addr);
-      sockfd = socket(AF_INET, SOCK_STREAM, 0);
-      if (sockfd < 0)  error("ERROR opening socket");
+      
+      // fetches information on the host      
+      struct addrinfo hints, *res;  
+      char service[256];
+   
+      memset(&hints, 0, sizeof(hints));
+      hints.ai_socktype = SOCK_STREAM;
+      hints.ai_family = AF_UNSPEC;
+      hints.ai_flags = AI_PASSIVE;
 
-      server = gethostbyname(host);
-      if (server == NULL)
-      {
-         fprintf(stderr, "ERROR, no such host %s \n", host);
-         exit(-1);
-      }
+      sprintf(service,"%d",*port); // convert the port number to a string
+      ai_err = getaddrinfo(host, service, &hints, &res); 
+      if (ai_err!=0) { perror("Error fetching host data. Wrong host name?"); exit(-1); }
 
-      bzero((char *) &serv_addr, sizeof(serv_addr));
-      serv_addr.sin_family = AF_INET;
-      bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
-      serv_addr.sin_port = htons(*port);
+      // creates socket
+      sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+      if (sockfd < 0) { perror("Error opening socket"); exit(-1); }
+    
+      // makes connection
+      if (connect(sockfd, res->ai_addr, res->ai_addrlen) < 0) 
+      { perror("Error opening INET socket: wrong port or server unreachable"); exit(-1); }
+      freeaddrinfo(res);
    }
    else
-   {  // creates a unix socket
-      struct sockaddr_un serv_addr;      psock=(struct sockaddr *)&serv_addr;     ssock=sizeof(serv_addr);
-      sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
-      bzero((char *) &serv_addr, sizeof(serv_addr));
+   {  
+      struct sockaddr_un serv_addr;
+
+      // fills up details of the socket addres
+      memset(&serv_addr, 0, sizeof(serv_addr));
       serv_addr.sun_family = AF_UNIX;
       strcpy(serv_addr.sun_path, "/tmp/ipi_");
       strcpy(serv_addr.sun_path+9, host);
+      // creates a unix socket
+  
+      // creates the socket
+      sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+
+      // connects
+      if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) 
+      { perror("Error opening UNIX socket: path unavailable, or already existing"); exit(-1); }
    }
 
-   if (connect(sockfd, psock, ssock) < 0) error("ERROR connecting");
 
    *psockfd=sockfd;
 }
