@@ -44,11 +44,7 @@ Functions:
 #include <sys/un.h>
 #include <netdb.h>
 
-void error(const char *msg)
-// Prints an error message and then exits.
-{   perror(msg);  exit(-1);   }
-
-void open_socket_(int *psockfd, int* inet, int* port, char* host)
+void open_socket(int *psockfd, int* inet, int* port, const char* host)
 /* Opens a socket.
 
 Note that fortran passes an extra argument for the string length, but this is
@@ -115,7 +111,7 @@ Args:
    *psockfd=sockfd;
 }
 
-void writebuffer_(int *psockfd, char *data, int* plen, int *info)
+void writebuffer(int *psockfd, const char *data, int* plen)
 /* Writes to a socket.
 
 Args:
@@ -130,11 +126,11 @@ Args:
    int len=*plen;
 
    n = write(sockfd,data,len);
-   *info = n;  // returns the number of bytes written
+   if (n < 0) { perror("Error writing to socket: server has quit or connection broke"); exit(-1); }
 }
 
 
-void readbuffer_(int *psockfd, char *data, int* plen, int *info)
+void readbuffer(int *psockfd, char *data, int* plen)
 /* Reads from a socket.
 
 Args:
@@ -153,6 +149,7 @@ Args:
    while (nr>0 && n<len )
    {  nr=read(sockfd,&data[n],len-n); n+=nr; }
 
-   *info = n;  // returns the number of bytes read
+   if (n == 0) { perror("Error reading from socket: server has quit or connection broke"); exit(-1); }
 }
+
 
