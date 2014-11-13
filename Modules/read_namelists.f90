@@ -1837,6 +1837,7 @@ MODULE read_namelists_module
        IF( ionode ) THEN
           IF( TRIM( calculation ) == 'vc-relax' .OR. &
               TRIM( calculation ) == 'vc-cp'    .OR. &
+              TRIM( calculation ) == 'driver'   .OR. &
               TRIM( calculation ) == 'vc-md'    .OR. &
               TRIM( calculation ) == 'vc-md'    .OR. & 
               TRIM( calculation ) == 'vc-cp-wf') THEN

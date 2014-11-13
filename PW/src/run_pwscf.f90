@@ -65,14 +65,14 @@ SUBROUTINE run_pwscf ( exit_status )
   !
   CALL check_stop_init()
   !
-  CALL setup ()
-  !
-  CALL qmmm_update_positions()
-  !
   if (ldriver) THEN 
     CALL driver()
     GOTO 111
   end if
+  CALL setup ()
+  !
+  CALL qmmm_update_positions()
+  !
   !
   CALL init_run()
   !

@@ -375,6 +375,7 @@ SUBROUTINE iosys()
      lforce    = .true.
      lstres    = .true.
      lmd       = .true.
+     lmovecell = .true.
      !
   CASE( 'vc-relax' )
      !
