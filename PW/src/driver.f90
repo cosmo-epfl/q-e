@@ -53,7 +53,12 @@
       host=srvaddress(6:INDEX(srvaddress,':',back=.true.)-1)//achar(0)    
     ENDIF
 
-    IF (ionode) write(*,*) " @ DRIVER MODE: Connecting to host:port ", trim(srvaddress(6:INDEX(srvaddress,':',back=.true.)-1)), port
+    if(inet==0) then
+       IF (ionode) write(*,*) " @ DRIVER MODE: Connecting to host:port ", trim(srvaddress(6:INDEX(srvaddress,':',back=.true.)-1)), port
+    else
+       IF (ionode) write(*,*) " @ DRIVER MODE: Connecting to host:port ", trim(srvaddress(1:INDEX(srvaddress,':',back=.true.)-1)), port
+    endif
+       
     ! opens socket and starts main loop
     IF (ionode) call open_socket(socket, inet, port, host)            
     driver_loop: DO
