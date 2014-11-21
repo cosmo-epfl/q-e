@@ -43,6 +43,12 @@
     lbfgs = .true.
     lmd = .true.
     history=1
+    lvol_old   = .false.
+    lvol_reset = .false.
+    ldist_old  = .false.
+    ldist_reset= .false.
+    lang_old   = .false.
+    lang_reset = .false.
     ! parses host name, port and socket type
     inet=1
     host=srvaddress(1:INDEX(srvaddress,':',back=.true.)-1)//achar(0)
@@ -53,12 +59,7 @@
       host=srvaddress(6:INDEX(srvaddress,':',back=.true.)-1)//achar(0)    
     ENDIF
 
-    if(inet==0) then
-       IF (ionode) write(*,*) " @ DRIVER MODE: Connecting to host:port ", trim(srvaddress(6:INDEX(srvaddress,':',back=.true.)-1)), port
-    else
-       IF (ionode) write(*,*) " @ DRIVER MODE: Connecting to host:port ", trim(srvaddress(1:INDEX(srvaddress,':',back=.true.)-1)), port
-    endif
-       
+    IF (ionode) write(*,*) " @ DRIVER MODE: Connecting to host:port ", trim(srvaddress(1:INDEX(srvaddress,':',back=.true.)-1)), port
     ! opens socket and starts main loop
     IF (ionode) call open_socket(socket, inet, port, host)            
     driver_loop: DO
@@ -114,7 +115,7 @@
             str_index = str_index+5
             trimmed_line=parbuffer(str_index:str_index+8)
             read(trimmed_line,*) KPT_a,KPT_b,KPT_c
-            write(*,*) " @ DRIVER MODE: NEWKPT ",KPT_a,KPT_b,KPT_c
+            if(ionode) write(*,*) " @ DRIVER MODE: NEWKPT ",KPT_a,KPT_b,KPT_c
             lkpt=.true.
                 if(lkpt) then
                   nk1=KPT_a
@@ -124,7 +125,7 @@
          endif
          str_index = index(parbuffer(1:parbufflen),"CRESET",.true.)
          if(str_index.gt.0) then
-            write(*,*) " @ DRIVER MODE: CRESET"
+            if(ionode) write(*,*) " @ DRIVER MODE: CRESET"
             lcreset=.true.
          endif
          isinit=.true.
@@ -157,6 +158,7 @@
          tau = RESHAPE(combuf, (/ 3 , nat /) )/alat   ! internally positions are in alat 
          at = cellh / alat                            ! and so the cell
 !Check here how much the cell has changed since last and reset
+         if(.not.firststep) then
          call dist_latvec2ang(dist_ang,cellh)
          lvol_old   =((omega_old-omega)/omega.gt.vol_tol)
          lvol_reset =((omega_reset-omega)/omega.gt.vol_tol)
@@ -164,6 +166,7 @@
          ldist_reset=any(abs(dist_ang(1:3)-dist_ang_reset(1:3))/maxval(dist_ang(1:3)).gt.dist_tol)
          lang_old   =any(abs(dist_ang(4:6)-dist_ang_old(4:6))  .gt.ang_tol)
          lang_reset =any(abs(dist_ang(4:6)-dist_ang_reset(4:6)).gt.ang_tol)
+         endif
                   
          if (ionode) write(*,*) " @ DRIVER MODE: Received positions "
 
