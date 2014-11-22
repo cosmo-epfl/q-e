@@ -20,6 +20,7 @@
   USE read_input,        ONLY : read_input_file
   USE start_k,            ONLY : nks_start, xk_start, wk_start, &
                                  nk1, nk2, nk3, k1, k2, k3
+      USE wvfct,           ONLY : ecutwfc
     IMPLICIT NONE
     
     LOGICAL drv_check
