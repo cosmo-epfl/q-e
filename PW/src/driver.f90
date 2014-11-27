@@ -40,7 +40,11 @@
     REAL*8 :: omega_reset
 !Kpoint mesh received from i-Pi
     INTEGER:: KPT_a,KPT_b,KPT_c
-    CHARACTER(LEN=40):: trimmed_line
+    CHARACTER(LEN=60):: trimmed_line
+!Ecutwfc
+    real*8:: ecutwfc_orig,ecutwfc_scale
+ 
+    ecutwfc_orig=ecutwfc
     lbfgs = .true.
     lmd = .true.
     history=1
@@ -127,6 +131,14 @@
          str_index = index(parbuffer(1:parbufflen),"CRESET",.true.)
          if(str_index.gt.0) then
             if(ionode) write(*,*) " @ DRIVER MODE: CRESET"
+            str_index = index(parbuffer(1:parbufflen),"ECUTWF",.true.)
+            if(str_index.gt.0) then
+                  str_index = str_index+6
+                  trimmed_line=parbuffer(str_index:str_index+6)
+                  read(trimmed_line,*) ecutwfc_scale
+                  ecutwfc=ecutwfc_orig*ecutwfc_scale
+            if(ionode) write(*,*) " @ DRIVER MODE: ECUTWFC",ecutwfc_scale
+            endif
             lcreset=.true.
          endif
          isinit=.true.
