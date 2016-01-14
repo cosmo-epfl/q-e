@@ -35,9 +35,12 @@
     INTEGER::CALLS=1, str_index, str_index2
     REAL*8:: dist_ang(6),dist_ang_old(6),dist_ang_reset(6),latvec(3,3)
 !Conditions to reset the cell
-    LOGICAL:: lang_reset=.false.,lang_old=.false.,ldist_reset=.false.,ldist_old=.false.,lvol_old=.false.,lvol_reset=.false.,lkpt=.false., lcreset=.false.
+    LOGICAL:: lang_reset=.false., lang_old=.false., ldist_reset=.false., &
+              ldist_old=.false., lvol_old=.false., lvol_reset=.false., &
+              lkpt=.false., lcreset=.false.
     REAL*8 :: ang_tol=10.d0, dist_tol=0.05d0, vol_tol=0.05d0
     REAL*8 :: omega_reset
+
 !Kpoint mesh received from i-Pi
     INTEGER:: KPT_a,KPT_b,KPT_c
     CHARACTER(LEN=60):: trimmed_line
@@ -208,14 +211,29 @@
                    !CALL clean_pw( .FALSE. )
                    if (ionode) write(*,*) " @ DRIVER MODE: reset evaluation "
                      if (ionode) then
-                         if(ldist_old)   write(*,'(a,3es15.6)')" @ DRIVER MODE: reset by cell length change from previous step : ",abs(dist_ang(1:3)-dist_ang_old(1:3))  /maxval(dist_ang(1:3)) 
-                         if(ldist_reset) write(*,'(a,3es15.6)')" @ DRIVER MODE: reset by cell length change from previous reset: ",abs(dist_ang(1:3)-dist_ang_reset(1:3))/maxval(dist_ang(1:3))
-                         if(lang_old)    write(*,'(a,3es15.6)')" @ DRIVER MODE: reset by cell angle change from previous step  : ",abs(dist_ang(4:6)-dist_ang_old(4:6))
-                         if(lang_reset)  write(*,'(a,3es15.6)')" @ DRIVER MODE: reset by cell angle change from previous reset : ",abs(dist_ang(4:6)-dist_ang_reset(4:6))
-                         if(lvol_old)    write(*,'(a,3es15.6)')" @ DRIVER MODE: reset by cell vol   change from previous step  : ",abs(dist_ang(4:6)-dist_ang_reset(4:6))
-                         if(lvol_reset)  write(*,'(a,3es15.6)')" @ DRIVER MODE: reset by cell vol   change from previous reset : ",abs(dist_ang(4:6)-dist_ang_reset(4:6))
-                         if(lkpt)        write(*,'(a,3i5)')    " @ DRIVER MODE: reset kpoint mesh due to changes               : ", nk1,nk2,nk3
-                         if(lcreset)     write(*,'(a)')    " @ DRIVER MODE: reinitialization by CRESET                     : "
+                         if(ldist_old) write(*,'(a,3es15.6)') &
+     " @ DRIVER MODE: reset by cell length change from previous step : ", & 
+     abs(dist_ang(1:3)-dist_ang_old(1:3))  /maxval(dist_ang(1:3)) 
+                         if(ldist_reset) write(*,'(a,3es15.6)') &
+     " @ DRIVER MODE: reset by cell length change from previous reset: ", &
+     abs(dist_ang(1:3)-dist_ang_reset(1:3))/maxval(dist_ang(1:3))
+                         if(lang_old) write(*,'(a,3es15.6)') &
+     " @ DRIVER MODE: reset by cell angle change from previous step  : ", &
+     abs(dist_ang(4:6)-dist_ang_old(4:6))
+                         if(lang_reset)  write(*,'(a,3es15.6)') &
+     " @ DRIVER MODE: reset by cell angle change from previous reset : ", &
+     abs(dist_ang(4:6)-dist_ang_reset(4:6))
+                         if(lvol_old) write(*,'(a,3es15.6)') &
+     " @ DRIVER MODE: reset by cell vol   change from previous step  : ", &
+     abs(dist_ang(4:6)-dist_ang_reset(4:6))
+                         if(lvol_reset)  write(*,'(a,3es15.6)') &
+     " @ DRIVER MODE: reset by cell vol   change from previous reset : ", &
+     abs(dist_ang(4:6)-dist_ang_reset(4:6))
+                         if(lkpt) write(*,'(a,3i5)') &
+     " @ DRIVER MODE: reset kpoint mesh due to changes               : ", &
+     nk1,nk2,nk3
+                         if(lcreset) write(*,'(a)') &
+     " @ DRIVER MODE: reinitialization by CRESET                     : "
                      endif
                      history = 1 ! resets history -- want to do new-old propagation if replica changed
                      if (ionode) then
@@ -305,17 +323,17 @@ contains
 !************************************************************************************
 
 subroutine dist_latvec2ang(dist_ang,latvec)
-!This subroutine will generate the angdeg represenation of the cell from the lattice vectors
-implicit none
-real(8):: dist_ang(6),latvec(3,3),pi,convang
-pi=acos(-1.d0)
-convang=180.d0/pi
-dist_ang(1)=sqrt(dot_product(latvec(:,1),latvec(:,1)))
-dist_ang(2)=sqrt(dot_product(latvec(:,2),latvec(:,2)))
-dist_ang(3)=sqrt(dot_product(latvec(:,3),latvec(:,3)))
-dist_ang(4)=acos(dot_product(latvec(:,2),latvec(:,3))/(dist_ang(2)*dist_ang(3)))*convang
-dist_ang(5)=acos(dot_product(latvec(:,3),latvec(:,1))/(dist_ang(3)*dist_ang(1)))*convang
-dist_ang(6)=acos(dot_product(latvec(:,1),latvec(:,2))/(dist_ang(1)*dist_ang(2)))*convang
+   !This subroutine will generate the angdeg represenation of the cell from the lattice vectors
+   implicit none
+   real(8):: dist_ang(6),latvec(3,3),pi,convang
+   pi=acos(-1.d0)
+   convang=180.d0/pi
+   dist_ang(1)=sqrt(dot_product(latvec(:,1),latvec(:,1)))
+   dist_ang(2)=sqrt(dot_product(latvec(:,2),latvec(:,2)))
+   dist_ang(3)=sqrt(dot_product(latvec(:,3),latvec(:,3)))
+   dist_ang(4)=acos(dot_product(latvec(:,2),latvec(:,3))/(dist_ang(2)*dist_ang(3)))*convang
+   dist_ang(5)=acos(dot_product(latvec(:,3),latvec(:,1))/(dist_ang(3)*dist_ang(1)))*convang
+   dist_ang(6)=acos(dot_product(latvec(:,1),latvec(:,2))/(dist_ang(1)*dist_ang(2)))*convang
 end subroutine
 !************************************************************************************
 
