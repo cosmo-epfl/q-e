@@ -1,0 +1,7 @@
+*.o
+*.inc
+*~
+*.mod
+*.x
+*.a
+make.sys

@@ -36,8 +36,7 @@
     REAL*8:: dist_ang(6),dist_ang_old(6),dist_ang_reset(6),latvec(3,3)
 !Conditions to reset the cell
     LOGICAL:: lang_reset=.false., lang_old=.false., ldist_reset=.false., &
-              ldist_old=.false., lvol_old=.false., lvol_reset=.false., &
-              lkpt=.false., lcreset=.false.
+              ldist_old=.false., lvol_old=.false., lvol_reset=.false.
     REAL*8 :: ang_tol=10.d0, dist_tol=0.05d0, vol_tol=0.05d0
     REAL*8 :: omega_reset
 
@@ -47,17 +46,17 @@
 !Ecutwfc
     real*8:: ecutwfc_orig,ecutwfc_scale
  
-    ecutwfc_orig=ecutwfc
+    ecutwfc_orig = ecutwfc
     lbfgs = .true.
     lmd = .true.
-    history=1
+    history = 1
     lvol_old   = .false.
     lvol_reset = .false.
     ldist_old  = .false.
     ldist_reset= .false.
     lang_old   = .false.
     lang_reset = .false.
-    ! parses host name, port and socket type
+    ! parses host name, port and socket type, from input (format:srvaddress = [hostname]:[UNIX|port]
     inet=1
     host=srvaddress(1:INDEX(srvaddress,':',back=.true.)-1)//achar(0)
     read(srvaddress(INDEX(srvaddress,':',back=.true.)+1:),*) port
@@ -68,20 +67,24 @@
     ENDIF
 
     IF (ionode) write(*,*) " @ DRIVER MODE: Connecting to host:port ", trim(srvaddress(1:INDEX(srvaddress,':',back=.true.)-1)), port
+
     ! opens socket and starts main loop
     IF (ionode) call open_socket(socket, inet, port, host)            
+
     driver_loop: DO
-!      write(*,*) "CELL_FACTOR",cell_factor
-      starting_pot="atomic"
-      starting_wfc='atomic+random'
+      ! since often input configuration can be different from what is passed first from i-PI, it is better to start from random atomic
+      starting_pot = "atomic"
+      starting_wfc = 'atomic+random'
       startingconfig = 'input'
-      restart=.false.
-      restart_mode="from_scratch"
+      restart = .false.
+      restart_mode = "from_scratch"
+
       ! do communication on master node only...
       if (ionode) call readbuffer(socket, header, MSGLEN)
       call mp_bcast(header,ionode_id, intra_image_comm)
       
       if (ionode) write(*,*) " @ DRIVER MODE: Message from server: ", trim(header)
+
       if (trim(header) == "STATUS") then
          if (ionode) then  ! does not  need init (well, maybe it should, just to check atom numbers and the like... )
             if (hasdata) then
@@ -93,7 +96,7 @@
             endif
          endif
       else if (trim(header) == "INIT") then
-         if (ionode) call readbuffer(socket, nat) ! actually this reads the replica id         
+         if (ionode) call readbuffer(socket, nat) ! actually this reads the replica id when the driver is used for multiple independent runs or replicas
          call mp_bcast(nat,ionode_id, intra_image_comm)
          if (nat.ne.replicaid .and. .not. firststep) then
            history = 1 ! resets history -- want to do new-old propagation if replica changed
@@ -108,7 +111,7 @@
          replicaid = nat
 
          if (ionode) then 
-           call readbuffer(socket, parbufflen) ! length of parameter string -- ignored at present!
+           call readbuffer(socket, parbufflen) ! length of parameter string
            call readbuffer(socket, parbuffer, parbufflen)
            write(*,*)" @ DRIVER MODE: parbuffer ", parbuffer(1:parbufflen)
            str_index = VERIFY(parbuffer(1:parbufflen),":",.false.)
@@ -117,35 +120,10 @@
          endif
          call mp_bcast(parbufflen,ionode_id, intra_image_comm)
          call mp_bcast(parbuffer, ionode_id, intra_image_comm)
-!Check for KPT information
-         str_index = index(parbuffer(1:parbufflen),"UPKPT",.true.)
-         if(str_index.gt.0) then
-            str_index = str_index+5
-            trimmed_line=parbuffer(str_index:str_index+8)
-            read(trimmed_line,*) KPT_a,KPT_b,KPT_c
-            if(ionode) write(*,*) " @ DRIVER MODE: NEWKPT ",KPT_a,KPT_b,KPT_c
-            lkpt=.true.
-                if(lkpt) then
-                  nk1=KPT_a
-                  nk2=KPT_b
-                  nk3=KPT_c
-                endif
-         endif
-         str_index = index(parbuffer(1:parbufflen),"CRESET",.true.)
-         if(str_index.gt.0) then
-            if(ionode) write(*,*) " @ DRIVER MODE: CRESET"
-            str_index = index(parbuffer(1:parbufflen),"ECUTWF",.true.)
-            if(str_index.gt.0) then
-                  str_index = str_index+6
-                  trimmed_line=parbuffer(str_index:str_index+6)
-                  read(trimmed_line,*) ecutwfc_scale
-                  ecutwfc=ecutwfc_orig*ecutwfc_scale
-            if(ionode) write(*,*) " @ DRIVER MODE: ECUTWFC",ecutwfc_scale
-            endif
-            lcreset=.true.
-         endif
+
          isinit=.true.
       else if (trim(header) == "POSDATA") then
+
          ! receives the positions & the cell data
          ! first reads cell and the number of atoms
          if (ionode) call readbuffer(socket, mtxbuffer, 9)
@@ -173,22 +151,23 @@
          cellih=transpose(cellih)         
          tau = RESHAPE(combuf, (/ 3 , nat /) )/alat   ! internally positions are in alat 
          at = cellh / alat                            ! and so the cell
-!Check here how much the cell has changed since last and reset
+
+         !Check here how much the cell has changed since last and reset
          if(.not.firststep) then
-         call dist_latvec2ang(dist_ang,cellh)
-         lvol_old   =((omega_old-omega)/omega.gt.vol_tol)
-         lvol_reset =((omega_reset-omega)/omega.gt.vol_tol)
-         ldist_old  =any(abs(dist_ang(1:3)-dist_ang_old(1:3))  /maxval(dist_ang(1:3)).gt.dist_tol)
-         ldist_reset=any(abs(dist_ang(1:3)-dist_ang_reset(1:3))/maxval(dist_ang(1:3)).gt.dist_tol)
-         lang_old   =any(abs(dist_ang(4:6)-dist_ang_old(4:6))  .gt.ang_tol)
-         lang_reset =any(abs(dist_ang(4:6)-dist_ang_reset(4:6)).gt.ang_tol)
+           call dist_latvec2ang(dist_ang,cellh)
+           lvol_old   =((omega_old-omega)/omega.gt.vol_tol)
+           lvol_reset =((omega_reset-omega)/omega.gt.vol_tol)
+           ldist_old  =any(abs(dist_ang(1:3)-dist_ang_old(1:3))  /maxval(dist_ang(1:3)).gt.dist_tol)
+           ldist_reset=any(abs(dist_ang(1:3)-dist_ang_reset(1:3))/maxval(dist_ang(1:3)).gt.dist_tol)
+           lang_old   =any(abs(dist_ang(4:6)-dist_ang_old(4:6))  .gt.ang_tol)
+           lang_reset =any(abs(dist_ang(4:6)-dist_ang_reset(4:6)).gt.ang_tol)
          endif
                   
          if (ionode) write(*,*) " @ DRIVER MODE: Received positions "
 
-     lmovecell=.TRUE. !This is true for most cases... should be eventually read from input files
-     CALL recips( at(1,1),at(1,2),at(1,3), bg(1,1),bg(1,2),bg(1,3) )
-     CALL volume( alat, at(1,1), at(1,2), at(1,3), omega )
+         lmovecell=.TRUE. !This is true for most cases... should be eventually read from input files
+         CALL recips( at(1,1),at(1,2),at(1,3), bg(1,1),bg(1,2),bg(1,3) )
+         CALL volume( alat, at(1,1), at(1,2), at(1,3), omega )
          if (firststep) then ! do run initialisation here, so it is done with the positions sent from i-PI
             at_old = at
             omega_old = omega
@@ -198,17 +177,16 @@
             CALL setup ()
             if (ionode) write(*,*) " @ DRIVER MODE: Preparing first evaluation "
             lmovecell=.TRUE.
-            if (ionode) call system("rm -rf pw*")
+            ! if (ionode) call system("rm -rf pw*") SERIOUSLY????
             call init_run()
             firststep=.false.
          else
-             if(ldist_old.or.ldist_reset.or.lang_old.or.lang_reset.or.lvol_old.or.lvol_reset.or.lkpt.or.lcreset) then
-                   ! ... Variable-cell optimization: if cell changes too much or if an external program
-                   ! ... imposes a new kmesh or requires a reset reinitialize the calculation with G-vectors and plane waves
+             if(ldist_old.or.ldist_reset.or.lang_old.or.lang_reset.or.lvol_old.or.lvol_reset) then
+                   ! ... Variable-cell optimization: if cell changes too much 
+                   ! ... reinitialize the calculation with G-vectors and plane waves
                    ! ... calculated for the new cell (may differ from the curent
                    ! ... result, using G_vectors and PWs for the starting cell)
                    !
-                   !CALL clean_pw( .FALSE. )
                    if (ionode) write(*,*) " @ DRIVER MODE: reset evaluation "
                      if (ionode) then
                          if(ldist_old) write(*,'(a,3es15.6)') &
@@ -229,11 +207,6 @@
                          if(lvol_reset)  write(*,'(a,3es15.6)') &
      " @ DRIVER MODE: reset by cell vol   change from previous reset : ", &
      abs(dist_ang(4:6)-dist_ang_reset(4:6))
-                         if(lkpt) write(*,'(a,3i5)') &
-     " @ DRIVER MODE: reset kpoint mesh due to changes               : ", &
-     nk1,nk2,nk3
-                         if(lcreset) write(*,'(a)') &
-     " @ DRIVER MODE: reinitialization by CRESET                     : "
                      endif
                      history = 1 ! resets history -- want to do new-old propagation if replica changed
                      if (ionode) then
@@ -247,8 +220,6 @@
                      omega_old = omega
                      omega_reset = omega
                      dist_ang_reset=dist_ang
-                     lkpt=.false.
-                     lcreset=.false.
           
                      CALL clean_pw( .false. )
                      CALL close_files(.true.)
@@ -259,13 +230,15 @@
                      conv_ions = .false.
                      dfftp%nr1=0; dfftp%nr2=0; dfftp%nr3=0; dffts%nr1=0; dffts%nr2=0; dffts%nr3=0
                      CALL realspace_grids_init (dfftp, dffts,at, bg, gcutm, gcutms )
-                     if (ionode) call system("rm -rf pw*")
+                     ! if (ionode) call system("rm -rf pw*")
                      CALL init_run()
              else
                      lmovecell=.TRUE.
                      CALL hinit1()
              endif
          end if 
+
+         ! does the actual SCF calculation
          CALL electrons()
          IF ( .NOT. conv_elec ) THEN
            CALL punch( 'all' )
@@ -274,7 +247,6 @@
          CALL forces()
          CALL stress(sigma)
          CALLS=CALLS+1
-         !write(*,*) "GCUTM",gcutm,gcutms
          
          ! converts energy & forces to the format expected by i-pi (so go from Ry to Ha)
          combuf=RESHAPE(force, (/ 3 * nat /) ) * 0.5   ! return force in atomic units    
@@ -322,19 +294,19 @@
 contains
 !************************************************************************************
 
-subroutine dist_latvec2ang(dist_ang,latvec)
-   !This subroutine will generate the angdeg represenation of the cell from the lattice vectors
-   implicit none
-   real(8):: dist_ang(6),latvec(3,3),pi,convang
-   pi=acos(-1.d0)
-   convang=180.d0/pi
-   dist_ang(1)=sqrt(dot_product(latvec(:,1),latvec(:,1)))
-   dist_ang(2)=sqrt(dot_product(latvec(:,2),latvec(:,2)))
-   dist_ang(3)=sqrt(dot_product(latvec(:,3),latvec(:,3)))
-   dist_ang(4)=acos(dot_product(latvec(:,2),latvec(:,3))/(dist_ang(2)*dist_ang(3)))*convang
-   dist_ang(5)=acos(dot_product(latvec(:,3),latvec(:,1))/(dist_ang(3)*dist_ang(1)))*convang
-   dist_ang(6)=acos(dot_product(latvec(:,1),latvec(:,2))/(dist_ang(1)*dist_ang(2)))*convang
-end subroutine
+  subroutine dist_latvec2ang(dist_ang,latvec)
+    !This subroutine will generate the angdeg represenation of the cell from the lattice vectors
+    implicit none
+     real(8):: dist_ang(6),latvec(3,3),pi,convang
+     pi=acos(-1.d0) 
+     convang=180.d0/pi
+     dist_ang(1)=sqrt(dot_product(latvec(:,1),latvec(:,1)))
+     dist_ang(2)=sqrt(dot_product(latvec(:,2),latvec(:,2)))
+     dist_ang(3)=sqrt(dot_product(latvec(:,3),latvec(:,3)))
+     dist_ang(4)=acos(dot_product(latvec(:,2),latvec(:,3))/(dist_ang(2)*dist_ang(3)))*convang
+     dist_ang(5)=acos(dot_product(latvec(:,3),latvec(:,1))/(dist_ang(3)*dist_ang(1)))*convang
+     dist_ang(6)=acos(dot_product(latvec(:,1),latvec(:,2))/(dist_ang(1)*dist_ang(2)))*convang
+  end subroutine
 !************************************************************************************
 
     
