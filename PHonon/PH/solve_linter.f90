@@ -32,7 +32,8 @@ SUBROUTINE solve_linter (irr, imode0, npe, drhoscf)
   USE klist,                ONLY : lgauss, degauss, ngauss, xk, wk
   USE gvect,                ONLY : g
   USE gvecs,                ONLY : doublegrid
-  USE fft_base,             ONLY : dfftp, dffts, tg_cgather
+  USE fft_base,             ONLY : dfftp, dffts
+  USE fft_parallel,         ONLY : tg_cgather
   USE lsda_mod,             ONLY : lsda, nspin, current_spin, isk
   USE spin_orb,             ONLY : domag
   USE wvfct,                ONLY : nbnd, npw, npwx, igk,g2kin,  et
@@ -548,7 +549,7 @@ SUBROUTINE solve_linter (irr, imode0, npe, drhoscf)
      !
      !    Here we save the information for recovering the run from this poin
      !
-     CALL flush_unit( stdout )
+     FLUSH( stdout )
      !
      rec_code=10
      IF (okpaw) THEN

@@ -236,9 +236,9 @@ SUBROUTINE convert_fhi (upf)
   upf%rel = 'scalar'  ! just guessing
   IF (nint(Zatom) > 0) THEN
      upf%psd = atom_name(nint(Zatom))
-     IF (nint(Zatom) > 18) upf%rel = 'no' ! just guessing
+     IF (nint(Zatom) < 18) upf%rel = 'no' ! just guessing
   ELSE
-     PRINT '("Atom name > ",$)'
+     WRITE(*,'("Atom name > ")', advance="NO")
      READ (5,'(a)') upf%psd
   ENDIF
   upf%typ = 'SL'
@@ -255,7 +255,7 @@ SUBROUTINE convert_fhi (upf)
      IF (pspxc > 0) THEN
         PRINT '("DFT read from abinit file: ",i1)', pspxc
      ENDIF
-     PRINT '("DFT > ",$)'
+     WRITE(*,'("DFT > ")', advance="NO")
      READ (5,'(a)') upf%dft
   ENDIF
   !
@@ -264,14 +264,19 @@ SUBROUTINE convert_fhi (upf)
   upf%ecutrho=0.0d0
   upf%ecutwfc=0.0d0
   !
-  PRINT '("Confirm or modify l max, l loc (read:",2i3,") > ",$)', lmax, lloc
-  READ (5,*) lmax, upf%lloc
-
-  IF ( lmax == upf%lloc) THEN
+! 2014/11/11 JM
+! Use lloc (from fhi module) here, otherwise the user input has not effect on the vloc assignment below.
+! In case of a .cpi file (i.e. direct output from Martin Fuchs's FHI98PP code), which does not include information about lloc,
+! a proper conversion could actually never have been achieved in the past.
+  WRITE(*,'("Confirm or modify l max, l loc (read:",2i3,") > ")', advance="NO") lmax, lloc
+  READ (5,*) lmax, lloc
+  !
+  IF ( lmax == lloc) THEN
      upf%lmax = lmax-1
   ELSE
      upf%lmax = lmax
   ENDIF
+  upf%lloc = lloc
   upf%lmax_rho = 0
   upf%nwfc  = lmax+1
   !
@@ -288,7 +293,7 @@ SUBROUTINE convert_fhi (upf)
   PRINT '("If unknown: list valence wfcts and occupancies for the atomic ground state ", &
          &"in increasing l order: s,p,d,f")'
   DO i=1, upf%nwfc
-10   PRINT '("Wavefunction # ",i1,": label (e.g. 4s), occupancy > ",$)', i
+10   WRITE(*,'("Wavefunction # ",i1,": label (e.g. 4s), occupancy > ")', advance="NO") i
      READ (5,*) label, upf%oc(i)
      READ (label(1:1),*, err=10) l
      upf%els(i)  = label
@@ -352,7 +357,11 @@ SUBROUTINE convert_fhi (upf)
            iv=iv+1
            upf%kbeta(iv)=upf%mesh
            DO ir = upf%mesh,1,-1
-              IF ( abs ( upf%vnl(ir,l,1) - upf%vnl(ir,upf%lloc,1) ) > 1.0E-6 ) THEN
+! 2014/11/11 JM
+! Explicitly use local potential here:
+! Otherwise the IF (lmax == upf%lloc) clause above leads to unnecessary ("maximum") large radial grids for the beta projectors.
+!              IF ( abs ( upf%vnl(ir,l,1) - upf%vnl(ir,upf%lloc,1) ) > 1.0E-6 ) THEN
+              IF ( abs ( upf%vnl(ir,l,1) - upf%vloc(ir) ) > 1.0E-6 ) THEN
                  ! include points up to the last with nonzero value
                  upf%kbeta(iv)=ir+1
                  exit

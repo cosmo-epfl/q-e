@@ -34,6 +34,9 @@
       USE funct,                  ONLY: dft_is_meta, dft_is_hybrid, exx_is_active
       USE fft_base,               ONLY: dffts
       USE fft_interfaces,         ONLY: fwfft, invfft
+      USE fft_parallel,           ONLY: pack_group_sticks, unpack_group_sticks
+      USE fft_parallel,           ONLY: fw_tg_cft3_z, bw_tg_cft3_z, fw_tg_cft3_xy, bw_tg_cft3_xy
+      USE fft_parallel,           ONLY: fw_tg_cft3_scatter, bw_tg_cft3_scatter
       USE mp_global,              ONLY: me_bgrp
       USE control_flags,          ONLY: lwfpbe0nscf
       USE exx_module,             ONLY: exx_potential
@@ -56,11 +59,16 @@
       !
       INTEGER     :: iv, jv, ia, is, isa, ism, ios, iss1, iss2, ir, ig, inl, jnl
       INTEGER     :: ivoff, jvoff, igoff, igno, igrp, ierr
-      INTEGER     :: idx, eig_offset, eig_index, nogrp_
+      INTEGER     :: idx, eig_offset, nogrp_
       REAL(DP)    :: fi, fip, dd, dv
       COMPLEX(DP) :: fp, fm, ci
+#if defined(__INTEL_COMPILER)
+#if __INTEL_COMPILER  >= 1300
+!dir$ attributes align: 4096 :: af, aa, psi, exx_a, exx_b
+#endif
+#endif
       REAL(DP),    ALLOCATABLE :: af( :, : ), aa( :, : )
-      COMPLEX(DP), ALLOCATABLE :: psi(:)
+      COMPLEX(DP), ALLOCATABLE :: psi(:), aux(:)
       REAL(DP)    :: tmp1, tmp2                      ! Lingzhu Kong
       REAL(DP),    ALLOCATABLE :: exx_a(:), exx_b(:) ! Lingzhu Kong      
       !
@@ -73,17 +81,16 @@
          allocate( exx_b( dffts%nnr ) ); exx_b=0.0_DP
       END IF
 !=======================================================================
-      IF( dffts%have_task_groups ) THEN
-         nogrp_ = dffts%nogrp
-         ALLOCATE( psi( dffts%tg_nnr * dffts%nogrp ) )
-      ELSE
-         nogrp_ = 1
-         ALLOCATE( psi( dffts%nnr ) )
-      END IF
+
+      nogrp_ = dffts%nogrp
+      ALLOCATE( psi( dffts%tg_nnr * dffts%nogrp ) )
+      ALLOCATE( aux( dffts%tg_nnr * dffts%nogrp ) )
       !
       ci = ( 0.0d0, 1.0d0 )
       !
-      psi( : ) = (0.d0, 0.d0)
+#ifdef __MPI
+
+      aux( : ) = (0.d0, 0.d0)
 
       igoff = 0
 
@@ -102,19 +109,32 @@
          IF ( ( idx + i - 1 ) == n ) c( : , idx + i ) = 0.0d0
 
          IF( idx + i - 1 <= n ) THEN
-            !$omp parallel do 
             DO ig=1,ngw
-               psi(nlsm(ig)+igoff) = conjg( c(ig,idx+i-1) - ci * c(ig,idx+i) )
-               psi(nls(ig)+igoff) =        c(ig,idx+i-1) + ci * c(ig,idx+i)
+               aux(nlsm(ig)+igoff) = conjg( c(ig,idx+i-1) - ci * c(ig,idx+i) )
+               aux(nls(ig)+igoff) =        c(ig,idx+i-1) + ci * c(ig,idx+i)
             END DO
-            !$omp end parallel do 
          END IF
 
          igoff = igoff + dffts%tg_nnr
 
       END DO
 
+      CALL pack_group_sticks( aux, psi, dffts )
+
+      CALL fw_tg_cft3_z( psi, dffts, aux )
+      CALL fw_tg_cft3_scatter( psi, dffts, aux )
+      CALL fw_tg_cft3_xy( psi, dffts )
+
+#else
+
+      psi = 0.0d0
+      DO ig=1,ngw
+         psi(nlsm(ig)) = conjg( c(ig,i) - ci * c(ig,i+1) )
+         psi(nls(ig)) =  c(ig,i) + ci * c(ig,i+1)
+      END DO
       CALL invfft( 'Wave', psi, dffts )
+
+#endif
       !
       ! the following avoids a potential out-of-bounds error
       !
@@ -231,7 +251,16 @@
          !
       END IF
       !
-      CALL fwfft( 'Wave', psi, dffts ) 
+#ifdef __MPI
+      CALL bw_tg_cft3_xy( psi, dffts )
+      CALL bw_tg_cft3_scatter( psi, dffts, aux )
+      CALL bw_tg_cft3_z( psi, dffts, aux )
+
+      CALL unpack_group_sticks( psi, aux, dffts )
+#else
+      CALL fwfft( 'Wave', psi, dffts )
+      aux = psi
+#endif
       !
       !   note : the factor 0.5 appears 
       !       in the kinetic energy because it is defined as 0.5*g**2
@@ -242,7 +271,7 @@
       !
 !$omp parallel default(none) &
 !$omp          private( eig_offset, igno, fi, fip, idx, fp, fm, ig ) &
-!$omp          shared( nogrp_ , f, ngw, psi, df, da, c, tpiba2, tens, dffts, me_bgrp, &
+!$omp          shared( nogrp_ , f, ngw, aux, df, da, c, tpiba2, tens, dffts, me_bgrp, &
 !$omp                  i, n, ggp, nls, nlsm )
 
       eig_offset = 0
@@ -261,8 +290,8 @@
             IF( dffts%have_task_groups ) THEN
 !$omp do 
                DO ig=1,ngw
-                  fp= psi(nls(ig)+eig_offset) +  psi(nlsm(ig)+eig_offset)
-                  fm= psi(nls(ig)+eig_offset) -  psi(nlsm(ig)+eig_offset)
+                  fp= aux(nls(ig)+eig_offset) +  aux(nlsm(ig)+eig_offset)
+                  fm= aux(nls(ig)+eig_offset) -  aux(nlsm(ig)+eig_offset)
                   df(ig+igno-1)= fi *(tpiba2 * ggp(ig) * c(ig,idx+i-1) + &
                                  CMPLX(real (fp), aimag(fm), kind=dp ))
                   da(ig+igno-1)= fip*(tpiba2 * ggp(ig) * c(ig,idx+i  ) + &
@@ -273,8 +302,8 @@
             ELSE
 !$omp do 
                DO ig=1,ngw
-                  fp= psi(nls(ig)) + psi(nlsm(ig))
-                  fm= psi(nls(ig)) - psi(nlsm(ig))
+                  fp= aux(nls(ig)) + aux(nlsm(ig))
+                  fm= aux(nls(ig)) - aux(nlsm(ig))
                   df(ig)= fi*(tpiba2*ggp(ig)* c(ig,idx+i-1)+CMPLX(DBLE(fp), AIMAG(fm),kind=DP))
                   da(ig)=fip*(tpiba2*ggp(ig)* c(ig,idx+i  )+CMPLX(AIMAG(fp),-DBLE(fm),kind=DP))
                END DO
@@ -291,7 +320,7 @@
 !$omp end parallel 
       !
       IF(dft_is_meta()) THEN
-         CALL dforce_meta(c(1,i),c(1,i+1),df,da,psi,iss1,iss2,fi,fip) !METAGGA
+         CALL dforce_meta(c(1,i),c(1,i+1),df,da,aux,iss1,iss2,fi,fip) !METAGGA
       END IF
 
 
@@ -372,10 +401,10 @@
       ENDIF
 !
       IF(dft_is_hybrid().AND.exx_is_active()) DEALLOCATE(exx_a, exx_b)
+      DEALLOCATE( aux )
       DEALLOCATE( psi )
 !
       CALL stop_clock( 'dforce' ) 
 !
       RETURN
    END SUBROUTINE dforce_x
-

@@ -37,7 +37,8 @@ SUBROUTINE projwave_boxes( filpdos, filproj, n_proj_boxes, irmin, irmax, plotbox
   USE io_files,             ONLY : iunwfc, nwordwfc
   USE scf,                  ONLY : rho
   USE projections_ldos,     ONLY : proj
-  USE fft_base,             ONLY : grid_scatter, dfftp
+  USE fft_base,             ONLY : dfftp
+  USE scatter_mod,          ONLY : scatter_grid
   USE fft_interfaces,       ONLY : invfft
   USE mp_global,            ONLY : intra_pool_comm
   USE mp,                   ONLY : mp_sum
@@ -157,7 +158,7 @@ SUBROUTINE projwave_boxes( filpdos, filproj, n_proj_boxes, irmin, irmax, plotbox
      ENDIF
      !
 #ifdef __MPI
-     CALL grid_scatter ( thetabox(:), thetathisproc(:,ibox) )
+     CALL scatter_grid ( dfftp, thetabox(:), thetathisproc(:,ibox) )
 #else
      thetathisproc(:,ibox) = thetabox(1:dfftp%nnr)      
 #endif
@@ -427,28 +428,28 @@ SUBROUTINE partialdos_boxes(Emin, Emax, DeltaE, kresolveddos, filpdos, n_proj_bo
        status='unknown')
 
   IF (kresolveddos) THEN
-     WRITE (4,'("# ik   ",$)')
+     WRITE (4,'("# ik   ")', advance="NO")
   ELSE
-     WRITE (4,'("#",$)')
+     WRITE (4,'("#")', advance="NO")
   ENDIF
   IF (nspin0 == 2) THEN
-     WRITE (4,'(" E (eV)  tot_up(E)  tot_dw(E)  totldos_up totldos_dw ",$)')
+     WRITE (4,'(" E (eV)  tot_up(E)  tot_dw(E)  totldos_up totldos_dw ")', advance="NO")
   ELSE
-     WRITE (4,'(" E (eV)  tot(E)     totldos    ",$)')
+     WRITE (4,'(" E (eV)  tot(E)     totldos    ")', advance="NO")
   ENDIF
   DO ibox=1, n_proj_boxes
      IF (nspin0 == 2) THEN
-        WRITE(4,'("#",i3," up(E) ",$)')  ibox
-        WRITE(4,'("#",i3," dw(E) ",$)')  ibox
+        WRITE(4,'("#",i3," up(E) ")', advance="NO")  ibox
+        WRITE(4,'("#",i3," dw(E) ")', advance="NO")  ibox
      ELSE
-        WRITE(4,'("#",i3," (E)   ",$)')  ibox
+        WRITE(4,'("#",i3," (E)   ")', advance="NO")  ibox
      ENDIF
   ENDDO
   WRITE (4,*)
   DO ik=1,nkseff
      DO ie= 0, ne
         IF (kresolveddos) THEN
-           WRITE (4,'(i5," ",$)') ik
+           WRITE (4,'(i5," ")', advance="NO") ik
         ENDIF
         etev = Emin + ie * DeltaE
         WRITE (4,'(f7.3,4(2e11.3),999(2e11.3))') etev*rytoev,  &

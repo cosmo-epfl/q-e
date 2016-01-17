@@ -148,7 +148,8 @@ program gwl_punch
                                 l_scissor,&
                                 scissor,&
                                 l_full,&
-                                n_full
+                                n_full,&
+                                l_simple
                  
  
   USE exchange_custom, ONLY : exchange_fast_dual
@@ -185,7 +186,7 @@ program gwl_punch
                                s_last_state,l_selfconsistent,l_whole_s,l_ts_eigen,l_frac_occ,num_nbndv_min,&
                                l_cond_pol_base,l_semicore,n_semicore,l_semicore_read, l_verbose, l_contour,&
                                l_real,exchange_fast_dual,l_bse,s_bse,dual_bse,l_big_system,extra_pw_cutoff,&
-                               l_list,l_scissor,scissor,l_full,n_full
+                               l_list,l_scissor,scissor,l_full,n_full,l_simple
                     
 
   !
@@ -194,7 +195,7 @@ program gwl_punch
   !   set default values for variables in namelist
   !
   prefix='export'
-  CALL get_env( 'ESPRESSO_TMPDIR', outdir )
+  CALL get_environment_variable( 'ESPRESSO_TMPDIR', outdir )
   IF ( TRIM( outdir ) == ' ' ) outdir = './'
   pp_file= ' '
   uspp_spsi = .FALSE.
@@ -282,6 +283,7 @@ program gwl_punch
   scissor=0.d0
   l_full=.false.
   n_full=0
+  l_simple=.false.
   !
   !    Reading input file
   !
@@ -402,11 +404,12 @@ program gwl_punch
   CALL mp_bcast(scissor, ionode_id, world_comm)
   CALL mp_bcast(l_full, ionode_id, world_comm)
   CALL mp_bcast(n_full, ionode_id, world_comm)
+  CALL mp_bcast(l_simple, ionode_id, world_comm)
 
   call read_file 
 
 
-#if defined __PARA
+#if defined __MPI
   kunittmp = kunit
 #else
   kunittmp = 1
@@ -453,17 +456,17 @@ program gwl_punch
 ! -----------------------------------------------------
 
   if(l_verbose) write(stdout,*) 'To check, we print the KS eigenvalues:'
-  CALL flush_unit( stdout )
+  FLUSH( stdout )
   !
   CALL print_ks_energies()
   !
 
 !  IF(l_head .and. .not.gamma_only) THEN
 !     write(stdout,*) 'BEFORE calculate_head'
-!     CALL flush_unit( stdout )
+!     FLUSH( stdout )
 !     CALL calculate_head
 !     write(stdout,*) 'AFTER calculate_head'
-!     CALL flush_unit( stdout )
+!     FLUSH( stdout )
 !  ENDIF
   !
 
@@ -476,10 +479,10 @@ program gwl_punch
       CALL weights  ( )
       !
       if(l_verbose) write(stdout,*) 'BEFORE dft_exchange_k'
-      CALL flush_unit( stdout )
+      FLUSH( stdout )
       !call dft_exchange_k(num_nbndv,num_nbnds,ecutoff_global)
       if(l_verbose) write(stdout,*) 'AFTER dft_exchange_k'
-      CALL flush_unit( stdout )
+      FLUSH( stdout )
     ENDIF
   ENDIF
 
@@ -487,10 +490,10 @@ program gwl_punch
  
 
   if(l_verbose) write(stdout,*) 'BEFORE produce_wannier_gamma'
-  CALL flush_unit( stdout )
+  FLUSH( stdout )
   CALL produce_wannier_gamma
   if(l_verbose) write(stdout,*) 'AFTER produce_wannier_gamma'
-  CALL flush_unit( stdout )
+  FLUSH( stdout )
 !     ENDIF
  
 !
@@ -706,7 +709,7 @@ subroutine read_export (pp_file,kunit,uspp_spsi, ascii, single_file, raw)
   
   write(stdout,*)"after wfc waves"
 
-#ifdef __PARA
+#ifdef __MPI
   call poolrecover (et, nbnd, nkstot, nks)
 #endif
  

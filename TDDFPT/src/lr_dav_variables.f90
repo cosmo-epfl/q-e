@@ -1,10 +1,11 @@
-! Copyright (C) 2001-2003 PWSCF group
+!
+! Copyright (C) 2001-2015 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
 ! or http://www.gnu.org/copyleft/gpl.txt .
-
-
+!
+!---------------------------------------------------------------------------
 MODULE lr_dav_variables
   !--------------------------------------------------------------------------
   ! ... sets the dimensions of the variables required in the
@@ -27,7 +28,7 @@ MODULE lr_dav_variables
   INTEGER :: num_eign, num_init, num_basis_max,max_iter,&
              p_nbnd_occ,p_nbnd_virt ! number of occ and virt bands for projection
   REAL(kind=dp) :: residue_conv_thr, reference, close_pre, broadening,start,&
-                   finish,step,turn2planb
+                   finish,step,turn2planb, vccouple_shift
   logical :: precondition,dav_debug, single_pole,&
              sort_contr,diag_of_h,print_spectrum,if_check_orth,&
              if_random_init,if_check_her,poor_of_ram,poor_of_ram2,&

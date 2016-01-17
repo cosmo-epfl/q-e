@@ -18,25 +18,19 @@ FUNCTION input_images_getarg( ) RESULT(input_images)
   !
   INTEGER :: input_images
   CHARACTER(len=256) ::  myname
-  INTEGER  :: iiarg, nargs, iargc, i, i0
+  INTEGER :: iiarg, nargs, i, i0
   !
-  !
-#if defined(__ABSOFT)
-#   define getarg getarg_
-#   define iargc  iargc_
-#endif
-  !
-  nargs = iargc()
+  nargs = command_argument_count()
   input_images = 0
   !
   DO iiarg = 1, nargs
      !
-     CALL getarg( iiarg, myname)
+     CALL get_command_argument( iiarg, myname)
      !
      IF ( TRIM( myname ) == '-input_images' .OR. &
           TRIM( myname ) == '--input_images' ) THEN
         !
-        CALL getarg( ( iiarg + 1 ) , myname )
+        CALL get_command_argument( ( iiarg + 1 ) , myname )
         !
         READ(myname,*) input_images
         RETURN

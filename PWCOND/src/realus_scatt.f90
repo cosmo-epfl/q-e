@@ -19,10 +19,11 @@ MODULE realus_scatt
 !
 ! Calculates orig_or_copy array
 !
+   USE kinds,            ONLY : dp
    USE constants,        ONLY : pi
    USE ions_base,        ONLY : nat, tau, ityp
    USE cell_base,        ONLY : at, bg
-   USE realus
+   USE realus,           ONLY : qpointlist, tabp, boxrad
    USE uspp,             ONLY : okvan
    USE uspp_param,       ONLY : upf
    USE mp_global,        ONLY : me_pool
@@ -52,11 +53,8 @@ MODULE realus_scatt
    IF (ALLOCATED(orig_or_copy)) DEALLOCATE( orig_or_copy )
    ALLOCATE( orig_or_copy( roughestimate, nat ) )
 
-#if defined (__MPI)
+   ! idx0 = starting index of real-space FFT arrays for this processor
    idx0 = dfftp%nr1x*dfftp%nr2x * dfftp%ipp(me_pool+1)
-#else
-   idx0 = 0
-#endif
 
    inv_nr1 = 1.D0 / DBLE( dfftp%nr1 )
    inv_nr2 = 1.D0 / DBLE( dfftp%nr2 )
@@ -102,10 +100,11 @@ MODULE realus_scatt
 !
 ! Augments the charge and spin densities.
 !
+   USE kinds,            ONLY : dp
    USE ions_base,        ONLY : nat, ityp
    USE lsda_mod,         ONLY : nspin
    USE scf,              ONLY : rho
-   USE realus
+   USE realus,           ONLY : tabp
    USE uspp,             ONLY : okvan, becsum, ijtoh
    USE uspp_param,       ONLY : upf, nhm, nh
    USE noncollin_module, ONLY : noncolin

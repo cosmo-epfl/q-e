@@ -1,5 +1,5 @@
 \documentclass[12pt,a4paper]{article}
-\def\version{5.1.1}
+\def\version{5.3}
 \def\qe{{\sc Quantum ESPRESSO}}
 
 \usepackage{html}
@@ -25,31 +25,12 @@
 \date{}
 
 \def\qeImage{../../Doc/quantum_espresso.pdf}
-\def\democritosImage{../../Doc/democritos.pdf}
-
-%\begin{htmlonly}
-%\def\qeImage{../../Doc/quantum_espresso.png}
-%\def\democritosImage{../../Doc/democritos.png}
-%\end{htmlonly}
 
 \title{
-  \includegraphics[width=5cm]{\qeImage} \hskip 2cm
-  \includegraphics[width=6cm]{\democritosImage}\\
-  \vskip 1cm
+  \includegraphics[width=5cm]{\qeImage} \\
   % title
-  \Huge User's Guide for the \PHonon\ package \smallskip
-  \Large (version \version)
+  \Huge \PHonon\ User's Guide (v. \version)
 }
-
-%\latexonly
-%\title{
-% \epsfig{figure=quantum_espresso.png,width=5cm}\hskip 2cm
-% \epsfig{figure=democritos.png,width=6cm}\vskip 1cm
-%  % title
-%  \Huge User's Guide for \PHonon\ \smallskip
-%  \Large (version \version)
-%}
-%\endlatexonly
 
 \maketitle
 
@@ -198,8 +179,10 @@ In the following, we will indicate by ${\bf q}$ the phonon wavevectors,
 while ${\bf k}$ will indicate Bloch vectors used for summing over the 
 Brillouin Zone.
 
-The main code \phx\ can be used whenever \PWscf\ can be 
-used, with the exceptions of DFT+U, nonlocal VdW and hybrid functionals. 
+The main code \phx\ can be used whenever \PWscf\ can be used, 
+with the exceptions of: DFT+U, semiempirical VdW corrections,
+nonlocal vdW and hybrid functionals, external electric fields,
+constraints on magnetization, nonperiodic boundary conditions.
 USPP and PAW are not implemented for higher-order response calculations.
 See the header of file \texttt{PHonon/PH/phonon.f90} for a complete and
 updated list of what \PHonon\ can and cannot do.
@@ -456,6 +439,10 @@ Possible reasons:
 \item For USPP and PAW: the cutoff for the charge density, \texttt{ecutrho}
 \item The {\bf k}-point grid, especially for metallic systems.
 \end{itemize}
+\item For metallic systems: it has been observed that the convergence with
+  respect to the k-point grid and smearing is very slow in presence of
+  semicore states, and for phonon wave-vectors that are not commensurate i
+  with the k-point grid (that is, ${\bf q}\ne {\bf k}_i-{\bf k}_j$)
 \end{itemize}
 Note that ``negative'' frequencies are actually imaginary: the negative
 sign flags eigenvalues of the dynamical matrix for which $\omega^2 <

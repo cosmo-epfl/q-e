@@ -18,7 +18,7 @@ SUBROUTINE cprmain( tau_out, fion_out, etot_out )
                                        ndr, ndw, nomore, tsde, textfor,        &
                                        tortho, tnosee, tnosep, trane, tranp,   &
                                        tsdp, tcp, tcap, ampre, amprp, tnoseh,  &
-                                       tolp, ortho_eps, ortho_max, printwfc
+                                       tolp, ortho_eps, ortho_max
   USE core,                     ONLY : rhoc
   USE uspp_param,               ONLY : nhm, nh, nvb, ish
   USE uspp,                     ONLY : nkb, vkb, becsum, deeq, okvan, nlcc_any
@@ -294,6 +294,10 @@ SUBROUTINE cprmain( tau_out, fion_out, etot_out )
      !
      IF ( ( tfor .OR. tfirst ) .AND. tefield ) CALL efield_update( eigr )
      IF ( ( tfor .OR. tfirst ) .AND. tefield2 ) CALL efield_update2( eigr )
+     !
+     ! ... pass ions information to plugins
+     !
+     CALL plugin_init_ions( tau0 )
      !
      IF ( lda_plus_u ) then
         ! forceh    ! Forces on ions due to Hubbard U 
@@ -648,7 +652,7 @@ SUBROUTINE cprmain( tau_out, fion_out, etot_out )
      !
      !=================================================================
      ! BS : Additional cycles for the Nose thermostat ... 
-     CYCLE_NOSE=CYCLE_NOSE+1
+     IF(tnosep) CYCLE_NOSE=CYCLE_NOSE+1
      IF(tnosep .AND. (CYCLE_NOSE .LE. 2) ) GO TO 444 
      !=================================================================
      ! 
@@ -800,6 +804,8 @@ SUBROUTINE cprmain( tau_out, fion_out, etot_out )
            IF ( thdyn )    CALL formf( tfirst, eself )
            IF ( tefield )  CALL efield_update( eigr )
            IF ( tefield2 ) CALL efield_update2( eigr )
+           !
+           CALL plugin_init_ions( tau0 )
            !
            lambdam = lambda
            !
@@ -1127,6 +1133,8 @@ SUBROUTINE terminate_run()
   IF (tcg) call print_clock_tcg()
   !
   CALL print_clock( 'ALLTOALL' )
+  !
+  CALL plugin_clock()
   !
   CALL mp_report()
   !

@@ -112,12 +112,12 @@
       USE constants,          ONLY: pi, fpi
       USE mp,                 ONLY: mp_sum
       USE io_global,          ONLY: stdout, ionode
-      USE mp_global,          ONLY: intra_bgrp_comm, nbgrp, inter_bgrp_comm, me_bgrp
+      USE mp_global,          ONLY: intra_bgrp_comm, nbgrp, inter_bgrp_comm, me_bgrp, nproc_bgrp
       USE funct,              ONLY: dft_is_meta
       USE cg_module,          ONLY: tcg
       USE cp_interfaces,      ONLY: stress_kin, enkin
       USE fft_interfaces,     ONLY: fwfft, invfft
-      USE fft_base,           ONLY: dffts, dfftp
+      USE fft_base,           ONLY: dffts, dfftp, dfft3d
       USE cp_interfaces,      ONLY: checkrho, ennl, calrhovan, dennl
       USE cp_main_variables,  ONLY: iprint_stdout, descla
       USE wannier_base,       ONLY: iwf
@@ -148,6 +148,11 @@
       REAL(DP) :: rsumr(2), rsumg(2), sa1, sa2, detmp(6), mtmp(3,3)
       REAL(DP) :: rnegsum, rmin, rmax, rsum
       COMPLEX(DP) :: ci,fp,fm
+#if defined(__INTEL_COMPILER)
+#if __INTEL_COMPILER  >= 1300
+!dir$ attributes align: 4096 :: psi, psis, drhovan
+#endif
+#endif
       COMPLEX(DP), ALLOCATABLE :: psi(:), psis(:)
       REAL(DP), ALLOCATABLE :: drhovan(:,:,:,:,:)
 
@@ -220,11 +225,12 @@
       !
       COMPUTE_CHARGE: IF( trhor .AND. ( .NOT. thdyn ) ) THEN
          !
-         !   non self-consistent calculation  
-         !   charge density is read from unit 47
+         !     ==================================================================
+         !     non self-consistent charge: charge density is read from unit 47
+         !     ==================================================================
          !
-!=============================================================
-! Lingzhu Kong
+         ! Lingzhu Kong
+         !
          IF( first ) THEN
             CALL read_rho( nspin, rhor )
             rhopr = rhor
@@ -232,44 +238,37 @@
          ELSE
             rhor = rhopr
          END IF
-!=============================================================
-!
+
          ALLOCATE( psi( dfftp%nnr ) )
+
          IF(nspin.EQ.1)THEN
             iss=1
-!$omp parallel do
             DO ir=1,dfftp%nnr
                psi(ir)=CMPLX(rhor(ir,iss),0.d0,kind=DP)
             END DO
-!$omp end parallel do
             CALL fwfft('Dense', psi, dfftp )
-!$omp parallel do
             DO ig=1,ngm
                rhog(ig,iss)=psi(nl(ig))
             END DO
-!$omp end parallel do
          ELSE
             isup=1
             isdw=2
-!$omp parallel do
             DO ir=1,dfftp%nnr
                psi(ir)=CMPLX(rhor(ir,isup),rhor(ir,isdw),kind=DP)
             END DO
-!$omp end parallel do
             CALL fwfft('Dense', psi, dfftp )
-!$omp parallel do private(fp,fm)
             DO ig=1,ngm
                fp=psi(nl(ig))+psi(nlm(ig))
                fm=psi(nl(ig))-psi(nlm(ig))
                rhog(ig,isup)=0.5d0*CMPLX( DBLE(fp),AIMAG(fm),kind=DP)
                rhog(ig,isdw)=0.5d0*CMPLX(AIMAG(fp),-DBLE(fm),kind=DP)
             END DO
-!$omp end parallel do
          ENDIF
 
          DEALLOCATE( psi )
-!
+
       ELSE
+         !
          !     ==================================================================
          !     self-consistent charge
          !     ==================================================================
@@ -293,61 +292,22 @@
             i = iwf
             !
             psis = 0.D0
-!$omp parallel do
             DO ig=1,ngw
                psis(nlsm(ig))=CONJG(c_bgrp(ig,i))
                psis(nls(ig))=c_bgrp(ig,i)
             END DO
-!$omp end parallel do
             !
             CALL invfft('Wave',psis, dffts )
             !
             iss1=1
             sa1=f_bgrp(i)/omega
-!$omp parallel do
             DO ir=1,dffts%nnr
                rhos(ir,iss1)=rhos(ir,iss1) + sa1*( DBLE(psis(ir)))**2
             END DO
-!$omp end parallel do
             !
-         ELSE IF( dffts%have_task_groups ) THEN
+         ELSE 
             !
-            CALL loop_over_states_tg()
-            !
-         ELSE
-            !
-            ALLOCATE( psis( dffts%nnr ) ) 
-            !
-            DO i = 1, nbsp_bgrp, 2
-               !
-               CALL c2psi( psis, dffts%nnr, c_bgrp( 1, i ), c_bgrp( 1, i+1 ), ngw, 2 )
-
-               CALL invfft('Wave',psis, dffts )
-               !
-               iss1 = ispin_bgrp(i)
-               sa1  = f_bgrp(i) / omega
-               IF ( i .NE. nbsp_bgrp ) THEN
-                  iss2 = ispin_bgrp(i+1)
-                  sa2  = f_bgrp(i+1) / omega
-               ELSE
-                  iss2 = iss1
-                  sa2  = 0.0d0
-               END IF
-               !
-!$omp parallel do
-               DO ir = 1, dffts%nnr
-                  rhos(ir,iss1) = rhos(ir,iss1) + sa1 * ( DBLE(psis(ir)))**2
-                  rhos(ir,iss2) = rhos(ir,iss2) + sa2 * (AIMAG(psis(ir)))**2
-               END DO
-!$omp end parallel do
-               !
-            END DO
-            !
-            IF( nbgrp > 1 ) THEN
-               call mp_sum( rhos, inter_bgrp_comm )
-            END IF
-            !
-            DEALLOCATE( psis ) 
+            CALL loop_over_states()
             !
          END IF
          !
@@ -522,11 +482,12 @@
       END SUBROUTINE
 
       !
-      !
 
-      SUBROUTINE loop_over_states_tg
+      SUBROUTINE loop_over_states
          !
          USE parallel_include
+         USE fft_parallel,           ONLY: pack_group_sticks, fw_tg_cft3_z, fw_tg_cft3_scatter, fw_tg_cft3_xy
+         USE fft_scalar, ONLY: cfft3ds
          !
          !        MAIN LOOP OVER THE EIGENSTATES
          !           - This loop is also parallelized within the task-groups framework
@@ -535,13 +496,22 @@
          IMPLICIT NONE
          !
          INTEGER :: from, ii, eig_index, eig_offset
+         !
+#if defined(__INTEL_COMPILER)
+#if __INTEL_COMPILER  >= 1300
+!dir$ attributes align: 4096 :: tmp_rhos, aux
+#endif
+#endif
          REAL(DP), ALLOCATABLE :: tmp_rhos(:,:)
+         COMPLEX(DP), ALLOCATABLE :: aux(:)
 
          ALLOCATE( psis( dffts%tg_nnr * dffts%nogrp ) ) 
+         ALLOCATE( aux( dffts%tg_nnr * dffts%nogrp ) ) 
          !
-         ALLOCATE( tmp_rhos ( dffts%nr1x*dffts%nr2x*dffts%tg_npp( me_bgrp + 1 ), nspin ) )
+         ALLOCATE( tmp_rhos ( dffts%nr1x * dffts%nr2x * dffts%tg_npp( me_bgrp + 1 ), nspin ) )
          !
          tmp_rhos = 0_DP
+
 
          do i = 1, nbsp_bgrp, 2*dffts%nogrp
             !
@@ -549,17 +519,15 @@
             !  The size of psis is nnr: which is equal to the total number
             !  of local fourier coefficients.
             !
-!$omp parallel default(shared), private(eig_offset, ig, eig_index )
-            !
-!$omp do
-            do ig = 1, SIZE(psis)
-               psis (ig) = (0.d0, 0.d0)
-            end do
-!$omp end do
+
+#ifdef __MPI
+
+            aux = (0.d0, 0.d0)
             !
             !  Loop for all local g-vectors (ngw)
-            !  c: stores the Fourier expansion coefficients
-            !     the i-th column of c corresponds to the i-th state
+            !  ci_bgrp: stores the Fourier expansion coefficients
+            !     the i-th column of c_bgrp corresponds to the i-th state (in
+            !     this band group)
             !  nlsm and nls matrices: hold conversion indices form 3D to
             !     1-D vectors. Columns along the z-direction are stored contigiously
             !
@@ -571,37 +539,50 @@
             do eig_index = 1, 2*dffts%nogrp, 2   
                !
                !  here we pack 2*nogrp electronic states in the psis array
+               !  note that if nogrp == nproc_bgrp each proc perform a full 3D
+               !  fft and the scatter phase is local (without communication)
                !
                IF ( ( i + eig_index - 1 ) <= nbsp_bgrp ) THEN
                   !
-                  !  Outer loop for eigenvalues
                   !  The  eig_index loop is executed only ONCE when NOGRP=1.
-                  !  Equivalent to the case with no task-groups
-                  !  dfft%nsw(me) holds the number of z-sticks for the current processor per wave-function
-                  !  We can either send these in the group with an mpi_allgather...or put the
-                  !  in the PSIS vector (in special positions) and send them with them.
-                  !  Otherwise we can do this once at the beginning, before the loop.
-                  !  we choose to do the latter one.
-
-!$omp do
-                  do ig=1,ngw
-                     psis(nlsm(ig)+eig_offset*dffts%tg_nnr)=conjg(c_bgrp(ig,i+eig_index-1))+ci*conjg(c_bgrp(ig,i+eig_index))
-                     psis(nls(ig)+eig_offset*dffts%tg_nnr)=c_bgrp(ig,i+eig_index-1)+ci*c_bgrp(ig,i+eig_index)
-                  end do
-!$omp end do
+                  !
+                  CALL c2psi( aux(eig_offset*dffts%tg_nnr+1), dffts%tg_nnr, &
+                        c_bgrp( 1, i+eig_index-1 ), c_bgrp( 1, i+eig_index ), ngw, 2 )
                   !
                   eig_offset = eig_offset + 1
                   !
                ENDIF
                !
             end do
-!$omp end parallel
-
+            !
             !  2*NOGRP are trasformed at the same time
             !  psis: holds the fourier coefficients of the current proccesor
             !        for eigenstates i and i+2*NOGRP-1
             !
-            CALL invfft( 'Wave', psis, dffts )
+            !  now redistribute data
+            !
+            !
+            !IF( dffts%nogrp == dffts%nproc ) THEN
+            !   CALL pack_group_sticks( aux, psis, dffts, dfft3d )
+            !   CALL cfft3ds( psis, dfft3d%nr1, dfft3d%nr2, dfft3d%nr3, &
+            !                 dfft3d%nr1x,dfft3d%nr2x,dfft3d%nr3x, 1, dfft3d%isind, dfft3d%iplw )
+            !ELSE
+               !
+               CALL pack_group_sticks( aux, psis, dffts )
+               CALL fw_tg_cft3_z( psis, dffts, aux )
+               CALL fw_tg_cft3_scatter( psis, dffts, aux )
+               CALL fw_tg_cft3_xy( psis, dffts )
+
+            !END IF
+#else
+
+            psis = (0.d0, 0.d0)
+
+            CALL c2psi( psis, dffts%nnr, c_bgrp( 1, i ), c_bgrp( 1, i+1 ), ngw, 2 )
+
+            CALL invfft('Wave',psis, dffts )
+
+#endif
             !
             ! Now the first proc of the group holds the first two bands
             ! of the 2*nogrp bands that we are processing at the same time,
@@ -656,12 +637,10 @@
             IF( ir > SIZE( psis ) ) &
                CALL errore( ' rhoofr ', ' psis size too small ', ir )
 
-!$omp parallel do default(shared)
             do ir = 1, dffts%nr1x*dffts%nr2x*dffts%tg_npp( me_bgrp + 1 )
                tmp_rhos(ir,iss1) = tmp_rhos(ir,iss1) + sa1*( real(psis(ir)))**2
                tmp_rhos(ir,iss2) = tmp_rhos(ir,iss2) + sa2*(aimag(psis(ir)))**2
             end do
-!$omp end parallel do 
             !
          END DO
 
@@ -669,6 +648,11 @@
             CALL mp_sum( tmp_rhos, inter_bgrp_comm )
          END IF
 
+         !ioff = 0
+         !DO ip = 1, nproc_bgrp
+         !   CALL MPI_REDUCE( rho(1+ioff*nr1*nr2,1), rhos(1,1), dffts%nnr, MPI_DOUBLE_PRECISION, MPI_SUM, ip-1, intra_bgrp_comm, ierr)
+         !   ioff = ioff + dffts%npp( ip )
+         !END DO
          IF ( dffts%nogrp > 1 ) THEN
             CALL mp_sum( tmp_rhos, gid = dffts%ogrp_comm )
          ENDIF
@@ -689,10 +673,12 @@
          ENDDO
 
          DEALLOCATE( tmp_rhos )
+         DEALLOCATE( aux ) 
          DEALLOCATE( psis ) 
+!call errore('stop','qui',1) ! debug
 
          RETURN
-      END SUBROUTINE loop_over_states_tg
+      END SUBROUTINE loop_over_states
 
 !-----------------------------------------------------------------------
    END SUBROUTINE rhoofr_cp
@@ -721,6 +707,11 @@
 ! output
       real(DP) ::    gradr( dfftp%nnr, 3, nspin )
 ! local
+#if defined(__INTEL_COMPILER)
+#if __INTEL_COMPILER  >= 1300
+!dir$ attributes align: 4096 :: v
+#endif
+#endif
       complex(DP), allocatable :: v(:)
       complex(DP) :: ci
       integer     :: iss, ig, ir
@@ -855,6 +846,11 @@ SUBROUTINE drhov(irb,eigrb,rhovan,drhovan,rhog,rhor,drhog,drhor)
      &     isa, ia, ir, ijs
       REAL(DP) :: asumt, dsumt
       COMPLEX(DP) fp, fm, ci
+#if defined(__INTEL_COMPILER)
+#if __INTEL_COMPILER  >= 1300
+!dir$ attributes align: 4096 :: v, dqgbt,qv
+#endif
+#endif
       COMPLEX(DP), ALLOCATABLE :: v(:)
       COMPLEX(DP), ALLOCATABLE:: dqgbt(:,:)
       COMPLEX(DP), ALLOCATABLE :: qv(:)
@@ -1153,6 +1149,11 @@ SUBROUTINE rhov(irb,eigrb,rhovan,rhog,rhor)
       INTEGER     :: isup, isdw, nfft, ifft, iv, jv, ig, ijv, is, iss, isa, ia, ir, i, j
       REAL(DP)    :: sumrho
       COMPLEX(DP) :: ci, fp, fm, ca
+#if defined(__INTEL_COMPILER)
+#if __INTEL_COMPILER  >= 1300
+!dir$ attributes align: 4096 :: qgbt, v, qv
+#endif
+#endif
       COMPLEX(DP), ALLOCATABLE :: qgbt(:,:)
       COMPLEX(DP), ALLOCATABLE :: v(:)
       COMPLEX(DP), ALLOCATABLE :: qv(:)

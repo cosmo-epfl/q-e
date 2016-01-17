@@ -1,42 +1,44 @@
 !
-! Copyright (C) 2002-2011 Quantum ESPRESSO group
+! Copyright (C) 2002-2015 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
 ! or http://www.gnu.org/copyleft/gpl.txt .
 !
 !----------------------------------------------------------------------------
-SUBROUTINE move_ions()
+SUBROUTINE move_ions ( idone )
   !----------------------------------------------------------------------------
   !
-  ! ... This routine moves the ions according to the requested scheme:
+  ! ... Perform an ionic step, according to the requested scheme:
+  ! ...    lbfgs               bfgs minimizations
+  ! ...    lmd                 molecular dynamics ( all kinds )
+  ! ... Additional variables affecting the calculation:
+  ! ...    lmovecell           Variable-cell calculation
+  ! ...    calc                Type of MD
+  ! ...    lconstrain          constrained MD
+  ! ..  "idone" is the counter on ionic moves, "nstep" their total number 
+  ! ... "istep" contains the number of all steps including previous runs
+  ! ... Coefficients for potential and wavefunctions extrapolation are
+  ! ... no longer computed here but in update_pot
   !
-  ! ... lbfgs               bfgs minimizations
-  ! ... lmd                 molecular dynamics ( verlet of vcsmd )
-  ! ... lmd + lconstrain    constrained molecular dynamics,
-  !
-  ! ... coefficients for potential and wavefunctions extrapolation are
-  ! ... also computed here
-  !
-  USE constants,              ONLY : e2, eps8, ry_kbar
+  USE constants,              ONLY : e2, eps6, ry_kbar
   USE io_global,              ONLY : stdout
-  USE io_files,               ONLY : tmp_dir, iunupdate, seqopn
+  USE io_files,               ONLY : tmp_dir
   USE kinds,                  ONLY : DP
   USE cell_base,              ONLY : alat, at, bg, omega, cell_force, fix_volume, fix_area
   USE cellmd,                 ONLY : omega_old, at_old, press, lmovecell, calc
-  USE ions_base,              ONLY : nat, ityp, tau, if_pos
+  USE ions_base,              ONLY : nat, ityp, zv, tau, if_pos
   USE fft_base,               ONLY : dfftp
   USE fft_base,               ONLY : dffts
-  USE grid_subroutines,       ONLY : realspace_grids_init
+  USE grid_subroutines,       ONLY : realspace_grid_init
   USE gvect,                  ONLY : gcutm
   USE gvecs,                  ONLY : gcutms
-  USE grid_subroutines,       ONLY : realspace_grids_init
   USE symm_base,              ONLY : checkallsym
-  USE ener,                   ONLY : etot
+  USE ener,                   ONLY : etot, ef
   USE force_mod,              ONLY : force, sigma
-  USE control_flags,          ONLY : istep, nstep, upscale, lbfgs, ldamped, &
-                                     lconstrain, conv_ions, use_SMC, &
-                                     lmd, llang, history, tr2
+  USE control_flags,          ONLY : istep, nstep, upscale, lbfgs, &
+                                     lconstrain, conv_ions, lmd, tr2
+  USE basis,                  ONLY : starting_wfc
   USE relax,                  ONLY : epse, epsf, epsp, starting_scf_threshold
   USE lsda_mod,               ONLY : lsda, absmag
   USE mp_images,              ONLY : intra_image_comm
@@ -44,76 +46,35 @@ SUBROUTINE move_ions()
   USE mp,                     ONLY : mp_bcast
   USE bfgs_module,            ONLY : bfgs, terminate_bfgs
   USE basic_algebra_routines, ONLY : norm
-  USE dynamics_module,        ONLY : verlet, langevin_md, proj_verlet
-  USE dynamics_module,        ONLY : smart_MC
+  USE dynamics_module,        ONLY : verlet, terminate_verlet, proj_verlet
+  USE dynamics_module,        ONLY : smart_MC, langevin_md
+  USE fcp                ,    ONLY : fcp_verlet, fcp_line_minimisation
+  USE fcp_variables,          ONLY : lfcpopt, lfcpdyn, fcp_mu, &
+                                     fcp_relax_crit
+  USE klist,                  ONLY : nelec
   USE dfunct,                 only : newd
   !
   IMPLICIT NONE
+  !
+  INTEGER,  INTENT(IN) :: idone
   !
   LOGICAL, SAVE         :: lcheck_mag = .TRUE., &
                            restart_with_starting_magnetiz = .FALSE., &
                            lcheck_cell= .TRUE., &
                            final_cell_calculation=.FALSE.
-  REAL(DP), ALLOCATABLE :: tauold(:,:,:)
   REAL(DP)              :: energy_error, gradient_error, cell_error
   LOGICAL               :: step_accepted, exst
   REAL(DP), ALLOCATABLE :: pos(:), grad(:)
   REAL(DP)              :: h(3,3), fcell(3,3)=0.d0, epsp1
   INTEGER,  ALLOCATABLE :: fixion(:)
   real(dp) :: tr
-  !
-  IF (use_SMC) CALL smart_MC()  ! for smart monte carlo method
+  LOGICAL               :: conv_fcp
   !
   ! ... only one node does the calculation in the parallel case
   !
   IF ( ionode ) THEN
      !
      conv_ions = .FALSE.
-     !
-     ALLOCATE( tauold( 3, nat, 3 ) )
-     !
-     ! ... the file containing old positions is opened 
-     ! ... ( needed for extrapolation )
-     !
-     CALL seqopn( iunupdate, 'update', 'FORMATTED', exst ) 
-     !
-     IF ( exst ) THEN
-        !
-        READ( UNIT = iunupdate, FMT = * ) history
-        READ( UNIT = iunupdate, FMT = * ) tauold
-        !
-     ELSE
-        !
-        history = 0
-        tauold  = 0.D0
-        !
-        WRITE( UNIT = iunupdate, FMT = * ) history
-        WRITE( UNIT = iunupdate, FMT = * ) tauold
-        !
-     END IF
-     !
-     CLOSE( UNIT = iunupdate, STATUS = 'KEEP' )
-     !
-     ! ... save the previous two steps ( a total of three steps is saved )
-     !
-     tauold(:,:,3) = tauold(:,:,2)
-     tauold(:,:,2) = tauold(:,:,1)
-     tauold(:,:,1) = tau(:,:)
-     !
-     ! ... history is updated (a new ionic step has been done)
-     !
-     history = MIN( 3, ( history + 1 ) )
-     !
-     ! ... old positions are written on file
-     !
-     CALL seqopn( iunupdate, 'update', 'FORMATTED', exst ) 
-     !
-     WRITE( UNIT = iunupdate, FMT = * ) history
-     WRITE( UNIT = iunupdate, FMT = * ) tauold
-     !
-     CLOSE( UNIT = iunupdate, STATUS = 'KEEP' )
-     !  
-     DEALLOCATE( tauold )
      !
      ! ... do the minimization / dynamics step
      !
@@ -154,7 +115,16 @@ SUBROUTINE move_ions()
         !
         CALL bfgs( pos, h, etot, grad, fcell, fixion, tmp_dir, stdout, epse,&
                    epsf, epsp1,  energy_error, gradient_error, cell_error,  &
-                   istep, nstep, step_accepted, conv_ions, lmovecell )
+                   lmovecell, step_accepted, conv_ions, istep )
+        !
+        ! ... relax for FCP
+        !
+        IF ( lfcpopt ) THEN
+           CALL fcp_line_minimisation( conv_fcp )
+           IF ( .not. conv_fcp .and. idone < nstep ) THEN
+             conv_ions = .FALSE.
+           END IF
+        END IF
         !
         IF ( lmovecell ) THEN
            ! changes needed only if cell moves
@@ -172,7 +142,7 @@ SUBROUTINE move_ions()
         !
         IF ( conv_ions ) THEN
            !
-           IF ( ( lsda .AND. ( absmag < eps8 ) .AND. lcheck_mag ) ) THEN
+           IF ( ( lsda .AND. ( absmag < eps6 ) .AND. lcheck_mag ) ) THEN
               !
               ! ... lsda relaxation :  a final configuration with zero 
               ! ...                    absolute magnetization has been found.
@@ -194,6 +164,15 @@ SUBROUTINE move_ions()
               CALL terminate_bfgs ( etot, epse, epsf, epsp, lmovecell, &
                                     stdout, tmp_dir )
               !
+           END IF
+           !
+           ! ... FCP output
+           !
+           IF ( lfcpopt ) THEN
+             WRITE( stdout, '(/,5X, "FCP Optimisation : converged ", &
+               & "( criteria force < ",ES8.1," )")') fcp_relax_crit
+             WRITE( stdout, '(5X,"FCP Optimisation : tot_charge =",F12.6,/)') &
+               SUM( zv(ityp(1:nat)) ) - nelec
            END IF
            !
         ELSE
@@ -236,29 +215,79 @@ SUBROUTINE move_ions()
      !
      IF ( lmd ) THEN
         !
-        IF ( calc == ' ' ) THEN
+        ! ... fixed-cell molecular dynamics algorithms first:
+        ! ... projected Verlet, Langevin, Verlet
+        !
+        IF ( calc == 'vm' ) THEN
            !
-           ! ... dynamics algorithms
+           CALL proj_verlet( conv_ions )
            !
-           IF ( ldamped ) THEN
+           ! ... relax for FCP
+           !
+           IF ( lfcpopt ) THEN
+              CALL fcp_line_minimisation( conv_fcp )
+              IF ( .not. conv_fcp .and. idone < nstep ) conv_ions = .FALSE.
               !
-              CALL proj_verlet()
+              ! ... FCP output
               !
-           ELSE IF ( llang ) THEN
-              !
-              CALL langevin_md()
-              !
-           ELSE
-              !
-              CALL verlet()
-              !
+              IF ( conv_ions ) THEN
+                 WRITE( stdout, '(5X,"FCP : converged ", &
+                      & "( criteria force < ", ES8.1," )")') fcp_relax_crit
+                 WRITE( stdout, '(5X,"FCP : final tot_charge =",F12.6,/)') &
+                      SUM( zv(ityp(1:nat)) ) - nelec
+              END IF
+           END IF
+           IF ( .NOT. conv_ions .AND. idone >= nstep ) THEN
+              WRITE( UNIT = stdout, FMT =  &
+                   '(/,5X,"The maximum number of steps has been reached.")' )
+              WRITE( UNIT = stdout, &
+                   FMT = '(/,5X,"End of molecular dynamics calculation")' )
            END IF
            !
-        ELSE IF ( calc /= ' ' ) THEN
+        ELSE IF ( calc(1:1) == 'l' ) THEN
+           !
+           ! ... for smart monte carlo method
+           !
+           IF ( calc(2:2) == 's' ) CALL smart_MC()
+           !
+           CALL langevin_md()
+           !
+           ! ... dynamics for FCP
+           !
+           IF ( lfcpdyn ) CALL fcp_verlet()
+           IF ( idone >= nstep ) THEN
+              WRITE( UNIT = stdout, FMT =  &
+                   '(/,5X,"The maximum number of steps has been reached.")' )
+              WRITE( UNIT = stdout, &
+                   FMT = '(/,5X,"End of molecular dynamics calculation")' )
+              conv_ions = .true.
+           END IF
+           !
+        ELSE IF ( calc == 'vd' ) THEN
+           !
+           CALL verlet()
+           !
+           ! ... dynamics for FCP
+           !
+           IF ( lfcpdyn ) CALL fcp_verlet()
+           IF ( idone >= nstep) THEN
+              CALL terminate_verlet()
+              conv_ions = .true.
+           END IF
+           !
+        ELSE
            !
            ! ... variable cell shape md
            !
-           CALL vcsmd()
+           CALL vcsmd( conv_ions )
+           !
+           ! ... after nstep, set conv_ions to T for MD, to F for damped MD
+           !
+           IF ( .NOT.conv_ions .AND. idone >= nstep ) THEN
+              WRITE( UNIT = stdout, FMT = '(/,5X,"Maximum number of ", &
+             &    "iterations reached, stopping")' )
+              conv_ions = ( calc(2:2) == 'd' )
+           END IF
            !
         END IF
         !
@@ -273,16 +302,20 @@ SUBROUTINE move_ions()
 
   CALL mp_bcast(restart_with_starting_magnetiz,ionode_id,intra_image_comm)
   CALL mp_bcast(final_cell_calculation,ionode_id,intra_image_comm)
+  IF ( lfcpopt .or. lfcpdyn ) CALL mp_bcast(nelec,ionode_id,intra_image_comm)
   !
   IF ( final_cell_calculation ) THEN
      ! 
      ! ... Variable-cell optimization: once convergence is achieved, 
      ! ... make a final calculation with G-vectors and plane waves
-     ! ... calculated for the final cell (may differ from the curent
+     ! ... calculated for the final cell (may differ from the current
      ! ... result, using G_vectors and PWs for the starting cell)
      !
      WRITE( UNIT = stdout, FMT = 9110 )
      WRITE( UNIT = stdout, FMT = 9120 )
+     !
+     ! ... prepare for a new run, restarted from scratch, not from previous
+     ! ... data (dimensions and file lengths will be different in general)
      !
      CALL clean_pw( .FALSE. )
      CALL close_files(.TRUE.)
@@ -293,12 +326,21 @@ SUBROUTINE move_ions()
      lmd=.FALSE.
      lcheck_mag = .FALSE.
      restart_with_starting_magnetiz = .FALSE.
+     if (trim(starting_wfc) == 'file') starting_wfc = 'atomic+random'
      ! ... conv_ions is set to .FALSE. to perform a final scf cycle
      conv_ions = .FALSE.
      ! ... allow re-calculation of FFT grid
      !
      dfftp%nr1=0; dfftp%nr2=0; dfftp%nr3=0; dffts%nr1=0; dffts%nr2=0; dffts%nr3=0
-     CALL realspace_grids_init (dfftp, dffts,at, bg, gcutm, gcutms )
+     CALL realspace_grid_init (dfftp, at, bg, gcutm )
+     IF ( gcutms == gcutm ) THEN
+        ! ... No double grid, the two grids are the same
+        dffts%nr1 = dfftp%nr1 ; dffts%nr2 = dfftp%nr2 ; dffts%nr3 = dfftp%nr3
+        dffts%nr1x= dfftp%nr1x; dffts%nr2x= dfftp%nr2x; dffts%nr3x= dfftp%nr3x
+     ELSE          
+        CALL realspace_grid_init ( dffts, at, bg, gcutms)
+     END IF
+     !
      CALL init_run()
      !
   ELSE IF (restart_with_starting_magnetiz) THEN
@@ -316,11 +358,11 @@ SUBROUTINE move_ions()
      ! ... conv_ions is set to .FALSE. to perform a final scf cycle
      conv_ions = .FALSE.
      !
-     ! ... re-initialize the potential and wavefunctions
+     ! ... re-initialize the potential (no need to re-initialize wavefunctions)
      !
      CALL potinit()
      CALL newd()
-     CALL wfcinit()
+     !!! CALL wfcinit()
      !
   END IF
   !
@@ -331,7 +373,6 @@ SUBROUTINE move_ions()
   CALL mp_bcast( force,     ionode_id, intra_image_comm )
   CALL mp_bcast( tr2,       ionode_id, intra_image_comm )
   CALL mp_bcast( conv_ions, ionode_id, intra_image_comm )
-  CALL mp_bcast( history,   ionode_id, intra_image_comm )
   !
   IF ( lmovecell ) THEN
      !

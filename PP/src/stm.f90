@@ -23,6 +23,7 @@ SUBROUTINE stm (sample_bias, stmdos, istates)
   USE io_global, ONLY : stdout
   USE cell_base, ONLY: tpiba2, tpiba, omega, at
   USE fft_base,  ONLY: dfftp
+  USE scatter_mod,  ONLY: gather_grid
   USE fft_interfaces, ONLY : fwfft, invfft
   USE gvect, ONLY: ngm, g, nl, nlm
   USE klist, ONLY: xk, lgauss, degauss, ngauss, wk, nks, nelec
@@ -36,7 +37,6 @@ SUBROUTINE stm (sample_bias, stmdos, istates)
   USE constants,      ONLY : degspin
   USE mp,        ONLY : mp_max, mp_min, mp_sum
   USE mp_global, ONLY : inter_pool_comm
-  USE fft_base,  ONLY : grid_gather
   !
   IMPLICIT NONE
   !
@@ -234,7 +234,7 @@ SUBROUTINE stm (sample_bias, stmdos, istates)
      rho%of_r(:,1) = dble(psic(:))
   ENDIF
 #ifdef __MPI
-  CALL grid_gather (rho%of_r(:,1), stmdos)
+  CALL gather_grid (dfftp, rho%of_r(:,1), stmdos)
 #else
   stmdos(:) = rho%of_r(:,1)
 #endif

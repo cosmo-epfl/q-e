@@ -29,7 +29,7 @@ SUBROUTINE elphon()
   USE modes,  ONLY : npert, nirr, u
   USE uspp_param, ONLY : nhm
   USE control_ph, ONLY : trans, xmldyn
-  USE output,     ONLY : fildyn
+  USE output,     ONLY : fildyn,fildvscf
   USE io_dyn_mat, ONLY : read_dyn_mat_param, read_dyn_mat_header, &
                          read_dyn_mat, read_dyn_mat_tail
   USE units_ph, ONLY : iudyn, lrdrho, iudvscf, iuint3paw, lint3paw
@@ -63,6 +63,7 @@ SUBROUTINE elphon()
   ! read Delta Vscf and calculate electron-phonon coefficients
   !
   imode0 = 0
+  WRITE (6, '(5x,a)') "Reading dVscf from file "//trim(fildvscf)
   DO irr = 1, nirr
      npe=npert(irr)
      ALLOCATE (dvscfin (dfftp%nnr, nspin_mag , npe) )
@@ -107,6 +108,7 @@ SUBROUTINE elphon()
   !
   IF (.NOT.trans) THEN
      IF (.NOT. xmldyn) THEN
+        WRITE (6, '(5x,a)') "Reading dynamics matrix from file "//trim(fildyn)
         CALL readmat (iudyn, ibrav, celldm, nat, ntyp, &
                       ityp, omega, amass, tau, xq, w2, dyn)
      ELSE
@@ -256,7 +258,8 @@ SUBROUTINE elphel (irr, npe, imode0, dvscfins)
   !      Original routine written by Francesco Mauri
   !
   USE kinds, ONLY : DP
-  USE fft_base, ONLY : dffts, tg_cgather
+  USE fft_base, ONLY : dffts
+  USE fft_parallel, ONLY : tg_cgather
   USE wavefunctions_module,  ONLY: evc
   USE io_files, ONLY: iunigk
   USE buffers,  ONLY : get_buffer

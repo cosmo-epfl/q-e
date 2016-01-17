@@ -1,5 +1,5 @@
 
-! Copyright (C) 2002-2011 Quantum ESPRESSO group
+! Copyright (C) 2002-2015 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -16,7 +16,7 @@ SUBROUTINE iosys()
   ! ...  those in input_parameters, are locally renamed by adding a "_"
   !
   USE kinds,         ONLY : DP
-  USE funct,         ONLY : dft_has_finite_size_correction, &
+  USE funct,         ONLY : dft_is_hybrid, dft_has_finite_size_correction, &
                             set_finite_size_volume, get_inlc 
   USE funct,         ONLY: set_exx_fraction, set_screening_parameter
   USE control_flags, ONLY: adapt_thr, tr2_init, tr2_multi
@@ -64,6 +64,14 @@ SUBROUTINE iosys()
                               nraise_     => nraise, &
                               refold_pos_ => refold_pos
   !
+  USE fcp_variables, ONLY : lfcpopt_ => lfcpopt, &
+                            lfcpdyn_ => lfcpdyn, &
+                            fcp_mu_ => fcp_mu, &
+                            fcp_mass_ => fcp_mass, &
+                            fcp_temperature, &
+                            fcp_relax_step_ => fcp_relax_step, &
+                            fcp_relax_crit_ => fcp_relax_crit
+  !
   USE extfield,      ONLY : tefield_  => tefield, &
                             dipfield_ => dipfield, &
                             edir_     => edir, &
@@ -79,9 +87,6 @@ SUBROUTINE iosys()
                             srvaddress_ => srvaddress
   !
   USE force_mod,     ONLY : lforce, lstres, force
-  !
-  USE gvecs,         ONLY : dual
-  USE gvect,         ONLY : ecutrho_ => ecutrho
   !
   USE fft_base, ONLY : dfftp
   USE fft_base, ONLY : dffts
@@ -110,7 +115,8 @@ SUBROUTINE iosys()
                            esm_bc_ => esm_bc, &
                            esm_nfit_ => esm_nfit, &
                            esm_efield_ => esm_efield, &
-                           esm_w_ => esm_w
+                           esm_w_ => esm_w, &
+                           esm_a_ => esm_a
   !
   USE a2F,           ONLY : la2F_ => la2F
   !
@@ -132,8 +138,9 @@ SUBROUTINE iosys()
   !
   USE relax,         ONLY : epse, epsf, epsp, starting_scf_threshold
   !
+  USE extrapolation, ONLY : pot_order, wfc_order
   USE control_flags, ONLY : isolve, max_cg_iter, david, tr2, imix, gamma_only,&
-                            nmix, iverbosity, niter, pot_order, wfc_order, &
+                            nmix, iverbosity, niter, &
                             remove_rigid_rot_ => remove_rigid_rot, &
                             diago_full_acc_   => diago_full_acc, &
                             tolp_             => tolp, &
@@ -145,8 +152,7 @@ SUBROUTINE iosys()
                             lkpoint_dir_      => lkpoint_dir, &
                             tqr_              => tqr, &
                             io_level, ethr, lscf, lbfgs, lmd, &
-                            ldamped, lbands, llang, ldriver, &
-                            lconstrain, restart, twfcollect, use_SMC, &
+                            ldriver, lbands, lconstrain, restart, twfcollect, &
                             llondon, do_makov_payne, lxdm, &
                             ts_vdw_           => ts_vdw, &
                             lecrpa_           => lecrpa, &
@@ -154,7 +160,6 @@ SUBROUTINE iosys()
   USE control_flags, ONLY: scf_must_converge_ => scf_must_converge
   !
   USE wvfct,         ONLY : nbnd_ => nbnd, &
-                            ecutwfc_ => ecutwfc, &
                             ecfixed_ => ecfixed, &
                             qcutz_   => qcutz, &
                             q2sigma_ => q2sigma
@@ -229,11 +234,13 @@ SUBROUTINE iosys()
                                angle1, angle2, constrained_magnetization,     &
                                B_field, fixed_magnetization, report, lspinorb,&
                                starting_spin_angle, assume_isolated,spline_ps,&
-                               vdw_corr, london, london_s6, london_rcut,      &
+                               vdw_corr, london, london_s6, london_rcut, london_c6, &
                                ts_vdw, ts_vdw_isolated, ts_vdw_econv_thr,     &
                                xdm, xdm_a1, xdm_a2,                           &
                                one_atom_occupations,                          &
-                               esm_bc, esm_efield, esm_w, esm_nfit,           &
+                               esm_bc, esm_efield, esm_w, esm_nfit, esm_a,    &
+                               lfcpopt, lfcpdyn, fcp_mu, fcp_mass, fcp_tempw, & 
+                               fcp_relax_step, fcp_relax_crit,                &
                                space_group, uniqueb, origin_choice,           &
                                rhombohedral
   !
@@ -276,7 +283,7 @@ SUBROUTINE iosys()
   !
   USE constraints_module,    ONLY : init_constraint
   USE read_namelists_module, ONLY : read_namelists, sm_not_set
-  USE london_module,         ONLY : init_london, lon_rcut, scal6
+  USE london_module,         ONLY : init_london, lon_rcut, scal6, in_c6
   USE xdm_module,            ONLY : init_xdm, a1i, a2i
   USE tsvdw_module,          ONLY : vdw_isolated, vdw_econv_thr
   USE us,                    ONLY : spline_ps_ => spline_ps
@@ -291,7 +298,7 @@ SUBROUTINE iosys()
   !
   INTEGER  :: ia, nt, inlc, ibrav_sg, ierr
   LOGICAL  :: exst, parallelfs
-  REAL(DP) :: theta, phi
+  REAL(DP) :: theta, phi, ecutwfc_pp, ecutrho_pp
   !
   !
   ! ... various initializations of control variables
@@ -331,7 +338,7 @@ SUBROUTINE iosys()
      CASE ( 'damp' )
         !
         lmd     = .true.
-        ldamped = .true.
+        calc    = 'vm'
         !
         ntcheck = nstep + 1
         !
@@ -352,14 +359,18 @@ SUBROUTINE iosys()
      SELECT CASE( trim( ion_dynamics ) )
      CASE( 'verlet' )
         !
-        CONTINUE
+        calc        = 'vd'
         !
-     CASE( 'langevin', 'langevin-smc', 'langevin+smc' )
+     CASE( 'langevin' )
         !
-        llang       = .true.
+        calc        = 'ld'
         temperature = tempw
-        use_SMC     = ( trim( ion_dynamics ) == 'langevin-smc' .OR. & 
-                        trim( ion_dynamics ) == 'langevin+smc' )
+        !
+     CASE( 'langevin-smc', 'langevin+smc' )
+        !
+        calc        = 'ls'
+        temperature = tempw
+        !
         !
      CASE DEFAULT
         !
@@ -383,7 +394,6 @@ SUBROUTINE iosys()
      lmd       = .true.
      lmovecell = .true.
      lforce    = .true.
-     ldamped   = .true.
      !
      epse =  etot_conv_thr
      epsf =  forc_conv_thr
@@ -409,7 +419,6 @@ SUBROUTINE iosys()
         !
         lbfgs = .true.
         lmd   = .false.
-        ldamped = .false.
         !
      CASE DEFAULT
         !
@@ -419,10 +428,10 @@ SUBROUTINE iosys()
         !
      END SELECT
      !
-     IF ( .not. ldamped .and. .not. lbfgs) &
-        CALL errore( 'iosys', 'calculation='// trim( calculation ) // &
-                   & ': incompatible ion (' // trim( ion_dynamics )// &
-                   & ') and cell dynamics ('// trim(cell_dynamics )// ')', 1 )
+     IF ( lbfgs .AND. TRIM(ion_dynamics) /= 'bfgs' ) &
+        CALL infomsg( 'iosys', 'calculation='// trim( calculation ) // &
+                   & ': ion dynamics ' // trim( ion_dynamics )// &
+                   & " ignored, 'bfgs' assumed" )
      !
   CASE( 'vc-md' )
      !
@@ -449,15 +458,15 @@ SUBROUTINE iosys()
      CASE DEFAULT
         !
         CALL errore( 'iosys', 'calculation=' // trim( calculation ) // &
-                   & ': ion_dynamics=' // trim( ion_dynamics ) // &
+                   & ': cell_dynamics=' // trim( cell_dynamics ) // &
                    & ' not supported', 1 )
         !
      END SELECT
      !
      IF ( trim( ion_dynamics ) /= 'beeman' ) &
-        CALL errore( 'iosys', 'calculation=' // trim( calculation ) // &
+        CALL infomsg( 'iosys', 'calculation=' // trim( calculation ) // &
                    & ': ion_dynamics=' // trim( ion_dynamics ) // &
-                   & ' not supported', 1 )
+                   & " ignored, assuming 'beeman'" )
      !
   CASE DEFAULT
      !
@@ -474,7 +483,7 @@ SUBROUTINE iosys()
             '(5x,"Presently no symmetry can be used with electric field",/)' )
   ENDIF
   IF ( tefield .and. tstress ) THEN
-     tstress = .false.
+     lstres = .false.
      WRITE( stdout, &
             '(5x,"Presently stress not available with electric field",/)' )
   ENDIF
@@ -754,19 +763,6 @@ SUBROUTINE iosys()
      !
   ENDIF
   !
-  IF ( ecutrho <= 0.D0 ) THEN
-     !
-     dual = 4.D0
-     ecutrho = dual*ecutwfc
-     !
-  ELSE
-     !
-     dual = ecutrho / ecutwfc
-     IF ( dual <= 1.D0 ) &
-        CALL errore( 'iosys', 'invalid dual?', 1 )
-     !
-  ENDIF
-  !
   SELECT CASE( trim( restart_mode ) )
   CASE( 'from_scratch' )
      !
@@ -780,7 +776,15 @@ SUBROUTINE iosys()
   CASE( 'restart' )
      !
      restart = .true.
+     IF ( TRIM(startingwfc) /= 'file' ) THEN
+        CALL infomsg('input','WARNING: "startingwfc" set to '//TRIM(startingwfc)//' may spoil restart')
+     END IF
+     IF ( TRIM(startingpot) /= 'file' ) THEN
+        CALL infomsg('input','WARNING: "startingpot" set to '//TRIM(startingpot)//' may spoil restart')
+        startingpot = 'file'
+     END IF
      IF ( trim( ion_positions ) == 'from_input' ) THEN
+        CALL infomsg('input','WARNING: restarting from positions as given in input')
         startingconfig = 'input'
      ELSE
         startingconfig = 'file'
@@ -1042,11 +1046,13 @@ SUBROUTINE iosys()
      iverbosity = 0
   END SELECT
   !
-  IF ( lberry .OR. lelfield ) THEN
+  IF ( lberry .OR. lelfield .OR. lorbm ) THEN
      IF ( npool > 1 ) CALL errore( 'iosys', &
           'Berry Phase/electric fields not implemented with pools', 1 )
      IF ( lgauss .OR. ltetra ) CALL errore( 'iosys', &
           'Berry Phase/electric fields only for insulators!', 1 )
+     IF ( lmovecell ) CALL errore( 'iosys', &
+          'Berry Phase/electric fields not implemented with variable cell', 1 )
   END IF
   !
   ! ... Copy values from input module to PW internals
@@ -1098,8 +1104,6 @@ SUBROUTINE iosys()
   dfftp%nr1     = nr1
   dfftp%nr2     = nr2
   dfftp%nr3     = nr3
-  ecutrho_ = ecutrho
-  ecutwfc_ = ecutwfc
   ecfixed_ = ecfixed
   qcutz_   = qcutz
   q2sigma_ = q2sigma
@@ -1143,18 +1147,6 @@ SUBROUTINE iosys()
   nofrac                  = force_symmorphic
   nbnd_                   = nbnd
   !
-  x_gamma_extrapolation_ = x_gamma_extrapolation
-  !
-  nqx1_ = nqx1
-  nqx2_ = nqx2
-  nqx3_ = nqx3
-  !
-  exxdiv_treatment_ = trim(exxdiv_treatment)
-  yukawa_   = yukawa
-  ecutvcut_ = ecutvcut
-  ecutfock_ = ecutfock
-  !
-  vdw_table_name_  = vdw_table_name
   !
   diago_full_acc_ = diago_full_acc
   starting_wfc    = startingwfc
@@ -1183,13 +1175,6 @@ SUBROUTINE iosys()
   trust_radius_ini_ = trust_radius_ini
   w_1_              = w_1
   w_2_              = w_2
-  !
-  ! ... ESM
-  !
-  esm_bc_ = esm_bc
-  esm_efield_ = esm_efield
-  esm_w_ = esm_w
-  esm_nfit_ = esm_nfit
   !
   IF (trim(occupations) /= 'from_input') one_atom_occupations_=.false.
   !
@@ -1240,6 +1225,7 @@ SUBROUTINE iosys()
   IF ( llondon) THEN
      lon_rcut    = london_rcut
      scal6       = london_s6
+     in_c6(:)    = london_c6(:)
   END IF
   IF ( lxdm ) THEN
      a1i = xdm_a1
@@ -1302,6 +1288,55 @@ SUBROUTINE iosys()
       do_comp_esm    = .true.
       !
   END SELECT
+  !
+  IF ( do_comp_mt .AND. lstres ) THEN
+     lstres = .false.
+     WRITE( stdout, &
+          '(5x,"Stress calculation not meaningful in isolated systems",/)' )
+  END IF
+  !
+  ! ... ESM
+  !
+  esm_bc_ = esm_bc
+  esm_efield_ = esm_efield
+  esm_w_ = esm_w
+  esm_nfit_ = esm_nfit 
+  esm_a_ = esm_a
+  !
+  IF ( esm_bc .EQ. 'bc4' ) THEN
+    IF ( ABS(esm_w) .LT. 1.D-8 ) THEN
+      CALL errore ('iosys','esm_w too small',1)
+    ELSEIF ( esm_w .GT. 0.D0 ) THEN
+      CALL errore ('iosys','positive esm_w not allowed for bc4',1)
+    ENDIF
+    IF ( esm_a .LT. 1.D-4 ) THEN
+      CALL errore ('iosys','smoothness parameter for bc4 too small',1)
+    ELSEIF ( esm_a .GT. 10.D0 ) THEN
+      CALL errore ('iosys','smoothness parameter for bc4 too big',1)
+    ENDIF
+  ENDIF
+  !
+  ! ... FCP
+  !
+  lfcpopt_        = lfcpopt
+  lfcpdyn_        = lfcpdyn
+  fcp_mu_         = fcp_mu
+  fcp_mass_       = fcp_mass
+  fcp_temperature = fcp_tempw
+  !
+  IF ( lfcpopt .or. lfcpdyn ) THEN
+     IF ( .not. do_comp_esm ) THEN
+        CALL errore ('iosys','FCP optimise/dynamics currently not available without ESM',1)
+     ENDIF
+     IF ( trim( calculation ).NE.'relax'.AND.trim( calculation ).NE.'md')THEN
+        CALL errore ('iosys',"FCP optimise/dynamics only available with calculation = 'relax' and 'md'",1)
+     ENDIF
+  ENDIF
+  !
+  IF ( fcp_temperature == 0.0_DP ) &
+     fcp_temperature = temperature
+  fcp_relax_step_ = fcp_relax_step
+  fcp_relax_crit_ = fcp_relax_crit
   !
   CALL plugin_read_input()
   !
@@ -1410,11 +1445,39 @@ SUBROUTINE iosys()
   !
   CALL init_dofree ( cell_dofree )
   !
-  ! ... read pseudopotentials (also sets DFT)
+  ! ... read pseudopotentials (also sets DFT and a few more variables)
+  ! ... returns values read from PP files into ecutwfc_pp, ecutrho_pp
   !
-  CALL readpp ( input_dft )
+  CALL readpp ( input_dft, .FALSE., ecutwfc_pp, ecutrho_pp )
+  CALL set_cutoff ( ecutwfc, ecutrho, ecutwfc_pp, ecutrho_pp )
   !
-  ! Set variables for hybrid functional HSE
+  ! ... set parameters of hybrid functionals
+  !
+  x_gamma_extrapolation_ = x_gamma_extrapolation
+  !
+  nqx1_ = nqx1
+  nqx2_ = nqx2
+  nqx3_ = nqx3
+  !
+  exxdiv_treatment_ = trim(exxdiv_treatment)
+  yukawa_   = yukawa
+  ecutvcut_ = ecutvcut
+  !
+  IF(ecutfock <= 0.0_DP) THEN
+     ! default case
+     ecutfock_ = 4.0_DP*ecutwfc
+  ELSE
+     IF(ecutfock < ecutwfc .OR. ecutfock > ecutrho) CALL errore('iosys', &
+          'ecutfock can not be < ecutwfc or > ecutrho!', 1) 
+     ecutfock_ = ecutfock
+  END IF
+  IF ( lstres .AND. dft_is_hybrid() .AND. npool > 1 )  CALL errore('iosys', &
+         'stress for hybrid functionals not available with pools', 1)
+  IF ( lmovecell.AND. dft_is_hybrid() ) CALL errore('iosys',&
+         'Variable cell and hybrid XC not tested',1)
+  !
+  ! ... must be done AFTER dft is read from PP files and initialized
+  ! ... or else the two following parameters will be overwritten
   !
   IF (exx_fraction >= 0.0_DP) CALL set_exx_fraction (exx_fraction)
   IF (screening_parameter >= 0.0_DP) &
@@ -1422,10 +1485,9 @@ SUBROUTINE iosys()
   !
   ! ... read the vdw kernel table if needed
   !
+  vdw_table_name_  = vdw_table_name
   inlc = get_inlc()
-  if (inlc > 0) then
-      call initialize_kernel_table(inlc)
-  endif
+  IF (inlc > 0) CALL initialize_kernel_table(inlc)
   !
   ! ... if DFT finite size corrections are needed, define the appropriate volume
   !
@@ -1485,11 +1547,50 @@ SUBROUTINE iosys()
   IF ( TRIM(wfc_dir) /= TRIM(tmp_dir) ) &
      CALL check_tempdir( wfc_dir, exst, parallelfs )
 
-  ! CALL restart_from_file()
-  !
   RETURN
   !
 END SUBROUTINE iosys
+!
+SUBROUTINE set_cutoff ( ecutwfc_in, ecutrho_in, ecutwfc_pp, ecutrho_pp )
+  !
+  ! Copy to modules the cutoffs, either read from input or from PP files
+  ! Values of ecutwfc and ecutrho are returned in ecutwfc_in, ecutrho_in
+  !
+  USE kinds, ONLY : dp
+  USE gvecs, ONLY : dual
+  USE gvect, ONLY : ecutrho
+  USE wvfct, ONLY : ecutwfc
+  !
+  IMPLICIT NONE
+  REAL(dp), INTENT(INOUT) :: ecutwfc_in, ecutrho_in
+  REAL(dp), INTENT(IN)    :: ecutwfc_pp, ecutrho_pp
+  !
+  IF( ecutwfc_in <= 0.0_dp ) THEN
+     IF( ecutwfc_pp <= 0.0_DP ) THEN
+        CALL errore( 'set_cutoff' ,' ecutwfc not set ',1)
+     ELSE
+        ecutwfc = ecutwfc_pp
+     END IF
+  ELSE
+     ecutwfc = ecutwfc_in
+  END IF
+  IF( ecutrho_in <= 0.0_dp ) THEN
+     IF( ecutwfc_in > 0.0_dp ) THEN
+        ecutrho = 4.0_dp*ecutwfc_in
+     ELSE IF( ecutrho_pp > 0.0_dp ) THEN
+        ecutrho = ecutrho_pp
+     ELSE IF( ecutwfc_pp > 0.0_dp ) THEN
+        ecutrho = 4.0_dp*ecutwfc_pp
+     END IF
+  ELSE
+     ecutrho = ecutrho_in
+  ENDIF
+  ecutwfc_in = ecutwfc
+  ecutrho_in = ecutrho
+  dual = ecutrho / ecutwfc
+  IF ( dual <= 1.0_dp ) CALL errore( 'set_cutoff', 'ecutrho <= ecutwfc?!?', 1 )
+  !
+END SUBROUTINE set_cutoff
 !
 !----------------------------------------------------------------------------
 SUBROUTINE read_cards_pw ( psfile, tau_format )

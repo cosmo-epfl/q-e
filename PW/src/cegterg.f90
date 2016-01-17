@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2007 Quantum ESPRESSO group
+! Copyright (C) 2001-2015 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -21,9 +21,9 @@ SUBROUTINE cegterg( npw, npwx, nvec, nvecx, npol, evc, ethr, &
   ! ... where H is an hermitean operator, e is a real scalar,
   ! ... S is an overlap matrix, evc is a complex vector
   !
-  USE kinds,            ONLY : DP
-  USE mp_bands ,        ONLY : intra_bgrp_comm
-  USE mp,               ONLY : mp_sum
+  USE kinds,         ONLY : DP
+  USE mp_bands,      ONLY : intra_bgrp_comm, inter_bgrp_comm, root_bgrp, nbgrp
+  USE mp,            ONLY : mp_sum, mp_bcast
   !
   IMPLICIT NONE
   !
@@ -364,6 +364,8 @@ SUBROUTINE cegterg( npw, npwx, nvec, nvecx, npol, evc, ethr, &
         conv(1:nvec) = ( ( ABS( ew(1:nvec) - e(1:nvec) ) < empty_ethr ) )
         !
      END WHERE
+     ! ... next line useful for band parallelization of exact exchange
+     IF ( nbgrp > 1 ) CALL mp_bcast(conv,root_bgrp,inter_bgrp_comm)
      !
      notcnv = COUNT( .NOT. conv(:) )
      !
@@ -481,9 +483,9 @@ SUBROUTINE pcegterg( npw, npwx, nvec, nvecx, npol, evc, ethr, &
   !
   USE kinds,     ONLY : DP
   USE io_global, ONLY : stdout
-  USE mp_bands,  ONLY : intra_bgrp_comm
-  USE mp_diag,   ONLY : ortho_comm, np_ortho, me_ortho, ortho_comm_id, &
-                        leg_ortho
+  USE mp_bands,  ONLY : intra_bgrp_comm, inter_bgrp_comm, root_bgrp, nbgrp
+  USE mp_diag,   ONLY : ortho_comm, np_ortho, me_ortho, ortho_comm_id, leg_ortho, &
+                        ortho_parent_comm
   USE descriptors,      ONLY : la_descriptor, descla_init , descla_local_dims
   USE parallel_toolkit, ONLY : zsqmred, zsqmher, zsqmdst
   USE mp,               ONLY : mp_bcast, mp_root_sum, mp_sum, mp_barrier
@@ -844,6 +846,8 @@ SUBROUTINE pcegterg( npw, npwx, nvec, nvecx, npol, evc, ethr, &
         conv(1:nvec) = ( ( ABS( ew(1:nvec) - e(1:nvec) ) < empty_ethr ) )
         !
      END WHERE
+     ! ... next line useful for band parallelization of exact exchange
+     IF ( nbgrp > 1 ) CALL mp_bcast(conv,root_bgrp,inter_bgrp_comm)
      !
      notcnv = COUNT( .NOT. conv(:) )
      !
@@ -1085,7 +1089,7 @@ CONTAINS
                  vtmp(:,1:notcl) = vl(:,1:notcl)
               END IF
 
-              CALL mp_bcast( vtmp(:,1:notcl), root, intra_bgrp_comm )
+              CALL mp_bcast( vtmp(:,1:notcl), root, ortho_parent_comm )
               ! 
               IF ( uspp ) THEN
                  !
@@ -1154,14 +1158,14 @@ CONTAINS
                  !
                  !  this proc sends his block
                  ! 
-                 CALL mp_bcast( vl(:,1:nc), root, intra_bgrp_comm )
+                 CALL mp_bcast( vl(:,1:nc), root, ortho_parent_comm )
                  CALL ZGEMM( 'N', 'N', kdim, nc, nr, ONE, &
                           psi(1,1,ir), kdmx, vl, nx, beta, evc(1,1,ic), kdmx )
               ELSE
                  !
                  !  all other procs receive
                  ! 
-                 CALL mp_bcast( vtmp(:,1:nc), root, intra_bgrp_comm )
+                 CALL mp_bcast( vtmp(:,1:nc), root, ortho_parent_comm )
                  CALL ZGEMM( 'N', 'N', kdim, nc, nr, ONE, &
                           psi(1,1,ir), kdmx, vtmp, nx, beta, evc(1,1,ic), kdmx )
               END IF
@@ -1212,14 +1216,14 @@ CONTAINS
                  !
                  !  this proc sends his block
                  ! 
-                 CALL mp_bcast( vl(:,1:nc), root, intra_bgrp_comm )
+                 CALL mp_bcast( vl(:,1:nc), root, ortho_parent_comm )
                  CALL ZGEMM( 'N', 'N', kdim, nc, nr, ONE, &
                           spsi(1,1,ir), kdmx, vl, nx, beta, psi(1,1,nvec+ic), kdmx )
               ELSE
                  !
                  !  all other procs receive
                  ! 
-                 CALL mp_bcast( vtmp(:,1:nc), root, intra_bgrp_comm )
+                 CALL mp_bcast( vtmp(:,1:nc), root, ortho_parent_comm )
                  CALL ZGEMM( 'N', 'N', kdim, nc, nr, ONE, &
                           spsi(1,1,ir), kdmx, vtmp, nx, beta, psi(1,1,nvec+ic), kdmx )
               END IF
@@ -1272,14 +1276,14 @@ CONTAINS
                  !
                  !  this proc sends his block
                  ! 
-                 CALL mp_bcast( vl(:,1:nc), root, intra_bgrp_comm )
+                 CALL mp_bcast( vl(:,1:nc), root, ortho_parent_comm )
                  CALL ZGEMM( 'N', 'N', kdim, nc, nr, ONE, &
                           hpsi(1,1,ir), kdmx, vl, nx, beta, psi(1,1,nvec+ic), kdmx )
               ELSE
                  !
                  !  all other procs receive
                  ! 
-                 CALL mp_bcast( vtmp(:,1:nc), root, intra_bgrp_comm )
+                 CALL mp_bcast( vtmp(:,1:nc), root, ortho_parent_comm )
                  CALL ZGEMM( 'N', 'N', kdim, nc, nr, ONE, &
                           hpsi(1,1,ir), kdmx, vtmp, nx, beta, psi(1,1,nvec+ic), kdmx )
               END IF
@@ -1339,11 +1343,12 @@ CONTAINS
 
            ! accumulate result on dm of root proc.
 
-           CALL mp_root_sum( work, dm, root, intra_bgrp_comm )
+           CALL mp_root_sum( work, dm, root, ortho_parent_comm )
 
         END DO
         !
      END DO
+     if (ortho_parent_comm.ne.intra_bgrp_comm .and. nbgrp > 1) dm = dm/nbgrp
      !
      !  The matrix is hermitianized using upper triangle
      !
@@ -1392,11 +1397,12 @@ CONTAINS
 
               CALL ZGEMM( 'C', 'N', nr, nc, kdim, ONE, v( 1, 1, ir ), &
                           kdmx, w(1,1,ii), kdmx, ZERO, vtmp, nx )
+              IF (ortho_parent_comm.ne.intra_bgrp_comm .and. nbgrp > 1) vtmp = vtmp/nbgrp
               !
               IF(  (desc%active_node > 0) .AND. (ipr-1 == desc%myr) .AND. (ipc-1 == desc%myc) ) THEN
-                 CALL mp_root_sum( vtmp(:,1:nc), dm(:,icc:icc+nc-1), root, intra_bgrp_comm )
+                 CALL mp_root_sum( vtmp(:,1:nc), dm(:,icc:icc+nc-1), root, ortho_parent_comm )
               ELSE
-                 CALL mp_root_sum( vtmp(:,1:nc), dm, root, intra_bgrp_comm )
+                 CALL mp_root_sum( vtmp(:,1:nc), dm, root, ortho_parent_comm )
               END IF
 
            END DO
@@ -1423,7 +1429,7 @@ CONTAINS
            e( i + ic - 1 ) = REAL( hl( i, i ) )
         END DO
      END IF
-     CALL mp_sum( e(1:nbase), intra_bgrp_comm )
+     CALL mp_sum( e(1:nbase), ortho_parent_comm )
      RETURN
   END SUBROUTINE set_e_from_h
   !

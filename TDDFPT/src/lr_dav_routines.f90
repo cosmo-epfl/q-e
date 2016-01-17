@@ -1,4 +1,11 @@
-!!----------------------------------------------------------------------------
+!
+! Copyright (C) 2001-2015 Quantum ESPRESSO group
+! This file is distributed under the terms of the
+! GNU General Public License. See the file `License'
+! in the root directory of the present distribution,
+! or http://www.gnu.org/copyleft/gpl.txt .
+!
+!--------------------------------------------------------------------
 module lr_dav_routines
 !----------------------------------------------------------------------------
 ! Created by Xiaochuan Ge (Oct, 2012)
@@ -16,7 +23,7 @@ contains
     use wvfct,         only : nbnd, nbndx, et
     use lr_dav_variables, only : vc_couple,num_init,single_pole,energy_dif,&
                                 & energy_dif_order, p_nbnd_occ, p_nbnd_virt,&
-                                & if_dft_spectrum
+                                & if_dft_spectrum, reference
     use lr_variables, only : nbnd_total
     use io_global,    only : stdout
     use lr_dav_debug
@@ -35,7 +42,7 @@ contains
     if(single_pole) then
       write(stdout,'(/5x,"Single Pole Approximation is used to generate the initial vectors",/)')
       write(stdout,'(/5x,"At this moment, this movement is only valid for NC PPs, and ecut_rho=4*ecut_wfc.",/5x, &
-            "Please make sure that you are using the correct input",/)')
+          & "Please make sure that you are using the correct input",/)')
     endif
 
     ib=0
@@ -52,7 +59,8 @@ contains
 
     call xc_sort_array_get_order(energy_dif,p_nbnd_occ*p_nbnd_virt,energy_dif_order)
 
-    do ib=1, p_nbnd_occ*p_nbnd_virt
+    !do ib=1, p_nbnd_occ*p_nbnd_virt
+    do ib=1, min(2*num_init,p_nbnd_occ*p_nbnd_virt)
       iv=energy_dif_order(ib)
       vc_couple(1,ib)=((iv-1)/p_nbnd_virt)+1+(nbnd-p_nbnd_occ)
       vc_couple(2,ib)=mod((iv-1),p_nbnd_virt)+nbnd+1
@@ -138,8 +146,7 @@ contains
       write(stdout,'(5x,"poor_of_ram2 is set to .false.. This means that you &
                      &would like to increase the speed ",/5x,"by storing the D_basis&
                      & and C_basis vectors which will cause three time of the memory cost.",&
-                     /5x,"Switch it to .true. if you need &
-                     &to save memory.",/)')
+                   & /5x,"Switch it to .true. if you need to save memory.",/)')
       allocate(D_vec_b(npwx,nbnd,nks,num_basis_max),stat=ierr)
       IF (ierr /= 0) call errore('lr_dav_alloc_init',"no enough memory",ierr)
 
@@ -153,8 +160,8 @@ contains
     if ( p_nbnd_occ*p_nbnd_virt .lt. num_init .and. .not. if_random_init) then
       write(stdout,'(/5X,"Initial vectors are forced to be chosen &
                &randomly because no enough particle-hole pairs are available.",/5x, &
-               "You may want to try to calculate more virtual states or include more occupied states by changing &
-               p_nbnd_occ in the input.",/)')
+             & "You may want to try to calculate more virtual states or include more occupied states by changing &
+             & p_nbnd_occ in the input.",/)')
       if_random_init=.true. ! The only way to set initial state when there's no virtual state.
     endif
 
@@ -613,19 +620,20 @@ contains
     ! As it is self-explained by its name
     ! Sort the array by the distance to the reference
 
-    use lr_dav_variables,  only : reference
+    use lr_dav_variables,  only : reference, vccouple_shift
     implicit none
     integer :: N,ia,ib
-    real*8 :: array(N),temp_ele
+    real*8 :: array(N),temp_ele, ref_
     integer :: sort_order(N), temp_order
 
     do ia=1, N
     sort_order(ia)=ia
     enddo
 
+    ref_=reference+vccouple_shift
     do ia=N, 2, -1
       do ib=1,ia-1
-        if(abs(array(sort_order(ib))-reference)>abs(array(sort_order(ia))-reference)) THEN
+        if(abs(array(sort_order(ib))-ref_)>abs(array(sort_order(ia))-ref_)) THEN
           temp_order=sort_order(ia)
           sort_order(ia)=sort_order(ib)
           sort_order(ib)=temp_order
@@ -723,7 +731,7 @@ contains
     if(num_basis+toadd .gt. num_basis_max) then
       if(discharged) &
         call errore('lr_discharge',"The num_basis_max is too small that even discharge &
-                    cannot work. Please increase its value in the input.",1)
+                  & cannot work. Please increase its value in the input.",1)
       discharged = .true.
       call lr_discharge()
       goto 110
@@ -1017,8 +1025,9 @@ contains
     minimum=0.0001d0
     do ib = 1, nbnd
       do ia = 1, npw
+        !temp = g2kin(ia)-et(ib,1)
         temp = g2kin(ia)-et(ib,1)-reference
-        if( abs(temp) .lt. minimum ) temp = sign(minimum,temp)
+        !if( abs(temp) .lt. minimum ) temp = sign(minimum,temp)
         vect(ia,ib) = vect(ia,ib)/temp
       enddo
     enddo
@@ -1256,7 +1265,7 @@ contains
     OPEN(17,file=filename,status="unknown")
 
     write(17,'("#",2x,"Energy(Ry)",10x,"total",13x,"X",13x,"Y",13x,"Z")') 
-    write(17,'("#  Broadening is: ",5x,F10.7,5x"Ry")') broadening
+    write(17,'("#  Broadening is: ",5x,F10.7,5x,"Ry")') broadening
     
     nstep=(finish-start)/step+1
     allocate(absorption(nstep,5)) ! Column 1: Energy; 2: Toal; 3,4,5: X,Y,Z
@@ -1349,7 +1358,7 @@ contains
     use fft_base,             only : dffts,dfftp
     use uspp,           only : okvan
     use io_global,    only : stdout
-    use realus,              only : fft_orbital_gamma, bfft_orbital_gamma
+    use realus,              only : invfft_orbital_gamma, fwfft_orbital_gamma
     use wavefunctions_module, only : psic
     use cell_base,              only : omega
     use mp,                   only : mp_barrier
@@ -1379,11 +1388,11 @@ contains
 
     wfck(:,1) = evc0(:,v1,1)
 
-    call fft_orbital_gamma(wfck(:,:),1,1)  ! FFT: v1  -> psic
+    call invfft_orbital_gamma(wfck(:,:),1,1)  ! FFT: v1  -> psic
     dvrss(:) = psic(:)                        ! v1 -> dvrss
     
     wfck(:,1) = evc0_virt(:,c1-nbnd,1)
-    call fft_orbital_gamma(wfck(:,:),1,1)  ! FFT: c1 -> psic
+    call invfft_orbital_gamma(wfck(:,:),1,1)  ! FFT: c1 -> psic
     do ir = 1, dffts%nnr
       dvrss(ir) = w1 * dvrss(ir) * psic(ir)         ! drho = 2*v1*c1 -> dvrss
     enddo
@@ -1391,12 +1400,12 @@ contains
     call dv_of_drho(0,dvrss,.false.)       ! calc the potential change 
 
     wfck(:,1) = evc0(:,v2,1)
-    call fft_orbital_gamma(wfck(:,:),1,1)  ! FFT: v2 -> psic
+    call invfft_orbital_gamma(wfck(:,:),1,1)  ! FFT: v2 -> psic
     do ir = 1, dffts%nnr
       psic(ir) = psic(ir) * dvrss(ir)      ! dv*v2 -> psic 
     enddo
     
-    call bfft_orbital_gamma(wfck(:,:),1,1)  ! BFFT: dv*v2 -> wfck
+    call fwfft_orbital_gamma(wfck(:,:),1,1)  ! BFFT: dv*v2 -> wfck
    
     calc_inter = wfc_dot(wfck(:,1),evc0_virt(:,c2-nbnd,1))
   
@@ -1567,6 +1576,7 @@ contains
     use io_global,     only : stdout
     use wvfct,         only : nbnd,npwx
     use klist,             only : nks
+    USE mp_world,        ONLY : nproc
 
     implicit none
     real(dp) :: ram_vect, ram_eigen
@@ -1582,9 +1592,10 @@ contains
     ram_eigen=2.0d0*sizeof(ram_eigen)*nbnd*npwx*nks*num_eign*4
 
     write(stdout,'(/5x,"Estimating the RAM requirements:")')
-    write(stdout,'(10x,"For the basis sets:",5x,F10.2,5x,"M")') ram_vect/1048576
-    write(stdout,'(10x,"For the eigenvectors:",5x,F10.2,5x,"M")') ram_eigen/1048576
-    write(stdout,'(10x,"Num_eign =",5x,I5,5x,"Num_basis_max =",5x,I5)') num_eign,num_basis_max
+    write(stdout,'(10x,"For the basis sets:",5x,F10.2,5x,"M")') nproc*ram_vect/1048576
+    write(stdout,'(10x,"For the eigenvectors:",5x,F10.2,5x,"M")') nproc*ram_eigen/1048576
+    write(stdout,'(10x,"Num_eign =",I5,5x,"Num_basis_max =",I5)') num_eign,num_basis_max
+    write(stdout,'(10x,"Reference = ",F5.2, "  Ry")') reference
     write(stdout,'(5x,"Do make sure that you have enough RAM.",/)')
 
     return
@@ -1662,7 +1673,8 @@ contains
     ! Re-build ortho-normal basis
     num_basis_new=0
     do ieign = 1, 2*num_eign ! Keep only components with large enough singularity values
-      if(sv(ieign) .gt. residue_conv_thr) then
+      if(sv(ieign) .gt. residue_conv_thr) then  ! XC: wheather to choose?
+      !if(sv(ieign) .gt. max_res) then
         ! After this step, the column vectors of (LR_M * U) are normal-orthogonalized
         U(:,ieign)=U(:,ieign)/sqrt(sv(ieign)) 
         num_basis_new=num_basis_new+1
@@ -1697,11 +1709,14 @@ contains
     ! Set s_vec_b if needed
     if(.not. poor_of_ram .and. okvan) then 
       call ZGEMM('N', 'N', nwords, num_basis_new, &
-               num_basis, (1.0D0,0.0d0), vec_b, nwords, &
+               num_basis, (1.0D0,0.0d0), svec_b, nwords, &
                MRZ, num_basis, (0.0D0,0.0D0), vec_b_temp, nwords)
 
       svec_b=cmplx(0.0d0,0.0d0)
       svec_b(:,:,:,1:num_basis_new)=vec_b_temp(:,:,:,1:num_basis_new)
+      do ib = 1, num_basis_new
+        call lr_apply_s(vec_b(:,:,:,ib),svec_b(:,:,:,ib))
+      enddo
     endif
 
 #ifdef __MPI
@@ -1850,6 +1865,7 @@ contains
     use lr_dav_variables
     use wvfct,                only : nbnd
     use fft_base,             only : dffts,dfftp
+    use scatter_mod,          only : gather_grid
     use io_global,            only : stdout,ionode,ionode_id
     use mp,                   only : mp_bcast,mp_barrier                  
     use mp_world,             only : world_comm
@@ -1859,7 +1875,6 @@ contains
     USE ions_base,  ONLY : nat, ityp, ntyp => nsp, atm, zv, tau
     USE io_global,  ONLY : stdout, ionode,ionode_id
     USE io_files,   ONLY : tmp_dir
-    USE fft_base,   ONLY : grid_gather
     USE gvecs,    ONLY : dual
     USE control_flags,                ONLY : gamma_only
     use lr_us
@@ -1921,7 +1936,7 @@ contains
     
 #ifdef __MPI
       ALLOCATE (raux1( dfftp%nr1x * dfftp%nr2x * dfftp%nr3x))
-      CALL grid_gather (raux, raux1)
+      CALL gather_grid (dfftp, raux, raux1)
       IF ( ionode ) WRITE (iunplot, '(5(1pe17.9))') &
           (raux1 (ir) , ir = 1, dfftp%nr1x * dfftp%nr2x * dfftp%nr3x)
       DEALLOCATE (raux1)

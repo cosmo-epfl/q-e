@@ -1,5 +1,5 @@
 \documentclass[12pt,a4paper]{article}
-\def\version{5.1.1}
+\def\version{5.3}
 \def\qe{{\sc Quantum ESPRESSO}}
 \def\NEB{\texttt{PWneb}} % to be decided
 \usepackage{html}
@@ -29,22 +29,12 @@
 \date{}
 
 \def\qeImage{../../Doc/quantum_espresso.pdf}
-\def\democritosImage{../../Doc/democritos.pdf}
-
-\begin{htmlonly}
-\def\qeImage{../../Doc/quantum_espresso.png}
-\def\democritosImage{../../Doc/democritos.png}
-\end{htmlonly}
 
 \title{
-  \includegraphics[width=5cm]{\qeImage} \hskip 2cm
-  \includegraphics[width=6cm]{\democritosImage}\\
-  \vskip 1cm
+  \includegraphics[width=5cm]{\qeImage} \\
   % title
-  \Huge User's Guide for \NEB\
-  \Large (version \version)
+  \Huge \NEB\ User's Guide (v. \version)
 }
-%\endhtmlonly
 
 \maketitle
 
@@ -164,7 +154,7 @@ must run the commands specified below through the batch queuing
 system installed on that machine. Ask your system administrator for
 instructions. 
 
-Go to NEB/examples and execute:
+Go to \texttt{NEB/examples/examplex01} and execute:
 \begin{verbatim}
       ./run_example
 \end{verbatim}

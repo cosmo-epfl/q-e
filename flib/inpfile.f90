@@ -5,26 +5,11 @@
 ! in the root directory of the present distribution,
 ! or http://www.gnu.org/copyleft/gpl.txt .
 !
-#if defined(__ABSOFT)
-#  define getenv getenv_
-#  define getarg getarg_
-#  define iargc  iargc_
-#endif
-!
-SUBROUTINE get_env ( variable_name, variable_value )
-  !
-  ! Wrapper for intrinsic getenv - all machine-dependent stuff here
-  !
-  CHARACTER (LEN=*)  :: variable_name, variable_value
-  !
-  CALL getenv ( variable_name, variable_value)
-  !
-END SUBROUTINE get_env
 !----------------------------------------------------------------------------
 SUBROUTINE input_from_file( )
   !
   ! This subroutine checks command-line arguments for -i[nput] "file name"
-  ! if "file nname" is present, attach input unit 5 to the specified file
+  ! if "file name" is present, attach input unit 5 to the specified file
   !
   IMPLICIT NONE
   !
@@ -33,24 +18,21 @@ SUBROUTINE input_from_file( )
   LOGICAL             :: found
   !
   INTEGER :: iiarg, nargs
-  ! Do not define iargc as external: gfortran doesn't like it
-  INTEGER :: iargc
   !
-  !
-  nargs = iargc()
+  nargs = command_argument_count()
   found = .FALSE.
   input_file = ' '
   !
   DO iiarg = 1, ( nargs - 1 )
      !
-     CALL getarg( iiarg, input_file )
+     CALL get_command_argument( iiarg, input_file )
      !
      IF ( TRIM( input_file ) == '-i'     .OR. &
           TRIM( input_file ) == '-in'    .OR. &
           TRIM( input_file ) == '-inp'   .OR. &
           TRIM( input_file ) == '-input' ) THEN
         !
-        CALL getarg( ( iiarg + 1 ) , input_file )
+        CALL get_command_argument( ( iiarg + 1 ) , input_file )
         found =.TRUE.
         EXIT
         !
@@ -92,28 +74,28 @@ SUBROUTINE get_file( input_file )
   !
   CHARACTER (LEN=256) :: prgname
   INTEGER             :: nargs
-  INTEGER             :: iargc
   LOGICAL             :: exst
+  INTEGER             :: stdin = 5, stdout = 6, stderr = 6
   !
-  nargs = iargc()
-  CALL getarg (0,prgname)
+  nargs = command_argument_count()
+  CALL get_command_argument (0,prgname)
   !
   IF ( nargs == 0 ) THEN
-10   PRINT  '("Input file > ",$)'
-     READ (5,'(a)', end = 20, err=20) input_file
+10   WRITE(stdout,'(5x,"Input file > ")', advance="NO")
+     READ (stdin,'(a)', end = 20, err=20) input_file
      IF ( input_file == ' ') GO TO 10
      INQUIRE ( FILE = input_file, EXIST = exst )
      IF ( .NOT. exst) THEN
-        PRINT  '(A,": file not found")', TRIM(input_file)
+        WRITE(stderr,'(A,": file not found")') TRIM(input_file)
         GO TO 10
      END IF
   ELSE IF ( nargs == 1 ) then
-     CALL getarg (1,input_file)
+     CALL get_command_argument (1,input_file)
   ELSE
-     PRINT  '(A,": too many arguments ",i4)', TRIM(prgname), nargs
+     WRITE(stderr,'(A,": too many arguments ",i4)') TRIM(prgname), nargs
   END IF
   RETURN
-20 PRINT  '(A,": reading file name ",A)', TRIM(prgname), TRIM(input_file)
+20 WRITE(stdout,'(A,": reading file name ",A)') TRIM(prgname), TRIM(input_file)
   !
 END SUBROUTINE get_file
 

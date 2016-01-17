@@ -3,7 +3,7 @@
 include	../../make.sys
 
 # location of needed modules and included files (if any)
-MODFLAGS= $(MOD_FLAG)../../iotk/src $(MOD_FLAG)../../Modules $(MOD_FLAG).
+MODFLAGS= $(MOD_FLAG)../../iotk/src $(MOD_FLAG)../../FFTXlib $(MOD_FLAG)../../Modules $(MOD_FLAG).
 IFLAGS=
 
 FOBJS = \
@@ -67,8 +67,21 @@ nlcc.o \
 ortho_base.o \
 ortho.o \
 phasefactor.o \
-plugin_initialization.o \
+plugin_add_potential.o \
+plugin_clean.o \
+plugin_clock.o \
+plugin_energy.o \
 plugin_ext_forces.o \
+plugin_get_potential.o \
+plugin_init_base.o \
+plugin_init_cell.o \
+plugin_initialization.o \
+plugin_init_ions.o \
+plugin_int_forces.o \
+plugin_print_energies.o \
+plugin_print_info.o \
+plugin_read_input.o \
+plugin_utilities.o \
 potentials.o \
 pres_ai_mod.o \
 print_out.o \
@@ -105,16 +118,22 @@ LOBJS = \
 entropy.o 
 
 QEMODS=../../Modules/libqemod.a
+QEFFT=../../FFTXlib/libqefft.a
 
-TLDEPS= bindir mods libs libiotk
+TLDEPS= bindir fftlib mods libs libiotk
 
 LIBOBJS= ../../flib/ptools.a ../../flib/flib.a ../../clib/clib.a ../../iotk/src/libiotk.a
 
-all : tldeps libcp.a cp.x cppp.x wfdd.x
+all : tldeps libcp.a manycp.x cp.x cppp.x wfdd.x
 
-cp.x : cprstart.o libcp.a $(QEMODS) $(LIBOBJS)
+manycp.x : manycp.o libcp.a $(QEMODS) $(QEFFT) $(LIBOBJS)
+	$(LD) $(LDFLAGS) -o manycp.x manycp.o \
+		libcp.a $(QEMODS) $(QEFFT) $(LIBOBJS) $(LIBS)
+	- ( cd ../../bin ; ln -fs ../CPV/src/cp.x . )
+
+cp.x : cprstart.o libcp.a $(QEMODS) $(QEFFT) $(LIBOBJS)
 	$(LD) $(LDFLAGS) -o cp.x cprstart.o \
-		libcp.a $(QEMODS) $(LIBOBJS) $(LIBS)
+		libcp.a $(QEMODS) $(QEFFT) $(LIBOBJS) $(LIBS)
 	- ( cd ../../bin ; ln -fs ../CPV/src/cp.x . )
 
 libcp.a : $(FOBJS) $(LOBJS) 
@@ -127,12 +146,12 @@ cpver.h :
 	echo "CHARACTER(LEN=70), PARAMETER :: version_date = '"`date`"'" \
 		> cpver.h
 
-cppp.x : fpmdpp.o $(QEMODS) $(LIBOBJS)
-	$(LD) $(LDFLAGS) -o cppp.x fpmdpp.o $(QEMODS) $(LIBOBJS) $(LIBS)
+cppp.x : fpmdpp.o $(QEMODS) $(QEFFT) $(LIBOBJS)
+	$(LD) $(LDFLAGS) -o cppp.x fpmdpp.o $(QEMODS) $(QEFFT) $(LIBOBJS) $(LIBS)
 	- (cd ../../bin ; ln -fs ../CPV/src/cppp.x . )
 
 wfdd.x : wfdd.o
-	$(LD) $(LDFLAGS) -o $@ wfdd.o $(QEMODS) $(LIBOBJS) $(LIBS)
+	$(LD) $(LDFLAGS) -o $@ wfdd.o $(QEMODS) $(QEFFT) $(LIBOBJS) $(LIBS)
 	- ( cd ../../bin ; ln -fs ../CPV/src/$@ . )
 
 tldeps :
@@ -141,7 +160,7 @@ tldeps :
 
 clean :
 	- /bin/rm -f cppp.x *.o *.mod cpver.h *.i core* *.F90 fort* \
-		*.cpp *.d *.L *.a *.s cp.x wfdd.x
-	-/bin/rm -rf ../../bin/cppp.x ../../bin/cp.x ../../bin/wfdd.x
+		*.cpp *.d *.L *.a *.s cp.x manycp.x wfdd.x
+	-/bin/rm -rf ../../bin/manycp.x ../../bin/cppp.x ../../bin/cp.x ../../bin/wfdd.x
 
 include make.depend

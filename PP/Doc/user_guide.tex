@@ -1,5 +1,5 @@
 \documentclass[12pt,a4paper]{article}
-\def\version{5.1.1}
+\def\version{5.3}
 \def\qe{{\sc Quantum ESPRESSO}}
 
 \usepackage{html}
@@ -22,7 +22,7 @@
 \def\PHonon{\texttt{PHonon}}
 \def\CP{\texttt{CP}}
 \def\PostProc{\texttt{PostProc}}
-\def\NEB{\texttt{PWneb}} % to be decided
+\def\NEB{\texttt{PWneb}}
 \def\make{\texttt{make}}
 
 \begin{document} 
@@ -30,32 +30,12 @@
 \date{}
 
 \def\qeImage{../../Doc/quantum_espresso.pdf}
-\def\democritosImage{../../Doc/democritos.pdf}
-
-\begin{htmlonly}
-\def\qeImage{quantum_espresso.png}
-\def\democritosImage{democritos.png}
-\end{htmlonly}
 
 \title{
-  \includegraphics[width=5cm]{\qeImage} \hskip 2cm
-  \includegraphics[width=6cm]{\democritosImage}\\
-  \vskip 1cm
+  \includegraphics[width=5cm]{\qeImage} \\
   % title
-  \Huge User's Guide for \PostProc\
-  \Large (version \version)
+  \Huge \PostProc\ User's Guide (v.\version) 
 }
-%\endhtmlonly
-
-%\latexonly
-%\title{
-% \epsfig{figure=quantum_espresso.png,width=5cm}\hskip 2cm
-% \epsfig{figure=democritos.png,width=6cm}\vskip 1cm
-%  % title
-%  \Huge User's Guide for \qe \smallskip
-%  \Large (version \version)
-%}
-%\endlatexonly
 
 \maketitle
 
@@ -95,6 +75,9 @@ Stefano de Gironcoli, Andrea Dal Corso (SISSA), Paolo Giannozzi
 \texttt{wannier\_ham} utility;
 \item Georgy Samsonidze (Bosch Research) for the interface
       with the Berkeley GW code.
+\item The late Prof. Eyvaz Isaev for the Fermi Surface code.
+\item Natalie Holzwarth (WFU) for the PAW projection in code
+     \texttt{projwfc.f90}
 \end{itemize}
 
 \PostProc\ is free software, released under the 
@@ -213,9 +196,8 @@ symmetry analysis of the band structure. For a complete input description,
 see\texttt{Doc/INPUT\_bands.*}. See Example 01, Example 04 and Example 06 
 for simple band plots.
 
-The calculation of Fermi surface can be performed using 
-\texttt{kvecs\_FS.x} and
-\texttt{bands\_FS.x}. The resulting file in .xsf format can be read and plotted
+The calculation of Fermi surface can be performed using code \texttt{fs.x}.
+The resulting file in .bxsf format can be read and plotted
 using XCrySDen. See Example 02 for an example of Fermi surface 
 visualization (Ni, including the spin-polarized case).
 
@@ -246,6 +228,11 @@ The total electronic DOS can also be calculated by code \texttt{dos.x},
 whose complete input documentation is in \texttt{Doc/INPUT\_DOS.*}
 See Example 02 for total and projected electronic DOS calculations;
 see Example 03 for projected and local DOS calculations.
+
+The DOS projected over {\em molecular} states (e.g. for a molecule on
+a surface system) can be computed using code \texttt{molecularpdos.x}
+(courtesy of Guido Fratesi). See example \texttt{MolDos\_example/}
+and documentation therein.
 
 \subsection{Wannier functions}
 

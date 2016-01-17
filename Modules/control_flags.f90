@@ -32,19 +32,17 @@ MODULE control_flags
      !
   END TYPE convergence_criteria
   !
-  PUBLIC :: tbeg, nomore, nbeg, isave, iprint, tv0rd, tzeroc, tzerop, &
+  PUBLIC :: tbeg, nomore, nbeg, isave, iprint, tv0rd, tzeroc, tzerop,        &
             tfor, tpre, tzeroe, tsde, tsdp, tsdc, taurdr,                    &
             ndr, ndw, tortho, ortho_eps, ortho_max, tstress, tprnfor,        &
-            timing, memchk, tprnsfac,                                        &
-            trane,dt_old,ampre, tranp, amprp, t_diis, t_diis_simple,         &
-            t_diis_rot, tnosee, tnosep, tnoseh, tcp, tcap, tdamp, tdampions, &
+            timing, memchk, trane, dt_old, ampre, tranp, amprp,              &
+            tnosee, tnosep, tnoseh, tcp, tcap,                               &
             tconvthrs, tolp, convergence_criteria, tionstep, nstepe,         &
-            tsteepdesc, tatomicwfc, tscreen, gamma_only, force_pairing,      &
-            lecrpa, tddfpt, smallmem
+            tscreen, gamma_only, force_pairing, lecrpa, tddfpt,  smallmem
   !
   PUBLIC :: fix_dependencies, check_flags
   PUBLIC :: tksw, trhor, thdyn, trhow
-  PUBLIC :: twfcollect, printwfc
+  PUBLIC :: twfcollect
   PUBLIC :: lkpoint_dir
   PUBLIC :: program_name
   !
@@ -73,14 +71,9 @@ MODULE control_flags
   LOGICAL :: tortho        = .FALSE. ! use iterative orthogonalization
   LOGICAL :: timing        = .FALSE. ! print out timing information
   LOGICAL :: memchk        = .FALSE. ! check for memory leakage
-  LOGICAL :: tprnsfac      = .FALSE. ! print out structure factor
-  LOGICAL :: tdamp         = .FALSE. ! Use damped dynamics for electrons
-  LOGICAL :: tdampions     = .FALSE. ! Use damped dynamics for ions
-  LOGICAL :: tatomicwfc    = .FALSE. ! Use atomic wavefunctions as starting guess for ch. density
   LOGICAL :: tscreen       = .FALSE. ! Use screened coulomb potentials for cluster calculations
   LOGICAL :: twfcollect    = .FALSE. ! Collect wave function in the restart file at the end of run.
   LOGICAL :: lkpoint_dir   = .TRUE.  ! save each k point in a different directory
-  INTEGER :: printwfc      = -1      ! Print wave functions, temporarely used only by ensemble-dft
   LOGICAL :: force_pairing = .FALSE. ! Force pairing
   LOGICAL :: lecrpa        = .FALSE. ! RPA correlation energy request
   LOGICAL :: tddfpt        = .FALSE. ! use tddfpt specific tweaks to ph.x routines
@@ -98,9 +91,6 @@ MODULE control_flags
   INTEGER :: nstepe   = 1
                             !  parameters to control how many electronic steps
                             !  between ions move
-
-  LOGICAL :: tsteepdesc = .FALSE.
-                            !  parameters for electronic steepest desceent
 
   INTEGER :: nbeg   = 0 ! internal code for initialization ( -1, 0, 1, 2, .. )
   INTEGER :: ndw    = 0 !
@@ -130,12 +120,6 @@ MODULE control_flags
   ! ... Read the cell from standard input
   !
   LOGICAL :: tbeg = .FALSE.
-  !
-  ! ... Flags that controls DIIS electronic minimization
-  !
-  LOGICAL :: t_diis        = .FALSE.
-  LOGICAL :: t_diis_simple = .FALSE.
-  LOGICAL :: t_diis_rot    = .FALSE.
   !
   ! ... Flag controlling the Nose thermostat for electrons
   !
@@ -169,9 +153,7 @@ MODULE control_flags
     lscf    =.FALSE., &! if .TRUE. the calc. is selfconsistent
     lbfgs   =.FALSE., &! if .TRUE. the calc. is a relaxation based on BFGS
     lmd     =.FALSE., &! if .TRUE. the calc. is a dynamics
-    ldriver =.FALSE., &! if .TRUE. run in driver mode
-    llang   =.FALSE., &! if .TRUE. the calc. is Langevin dynamics
-    use_SMC =.FALSE., &! if .TRUE. use the Smart Monte Carlo method
+    ldriver =.FALSE., &! if .TRUE. the calc. is a driver run    
     lwf     =.FALSE., &! if .TRUE. the calc. is with wannier functions
     !=================================================================
     !exx_wf related 
@@ -180,7 +162,6 @@ MODULE control_flags
     !=================================================================
     lbands  =.FALSE., &! if .TRUE. the calc. is band structure
     lconstrain=.FALSE.,&! if .TRUE. the calc. is constraint
-    ldamped =.FALSE., &! if .TRUE. the calc. is a damped dynamics
     llondon =.FALSE., & ! if .TRUE. compute Grimme D2 dispersion corrections
     ts_vdw  =.FALSE., & ! as above for Tkatchenko-Scheffler disp.corrections
     lxdm    =.FALSE., & ! if .TRUE. compute XDM dispersion corrections
@@ -214,24 +195,12 @@ MODULE control_flags
   REAL(DP), PUBLIC  :: &
     ethr               ! the convergence threshold for eigenvalues
   INTEGER, PUBLIC :: &
+    isolve,           &! Davidson or CG or ParO diagonalization
     david,            &! max dimension of subspace in Davidson diagonalization
-    isolve,           &! Davidson or CG or DIIS diagonalization
-    max_cg_iter,      &! maximum number of iterations in a CG di
-    diis_buff,        &! dimension of the buffer in diis
-    diis_ndim          ! dimension of reduced basis in DIIS
+    max_cg_iter        ! maximum number of iterations in a CG call
   LOGICAL, PUBLIC :: &
     diago_full_acc = .FALSE. ! if true,  empty eigenvalues have the same
                              ! accuracy of the occupied ones
-  !
-  ! ... wfc and rho extrapolation
-  !
-  REAL(DP), PUBLIC :: &
-    alpha0,           &! the mixing parameters for the extrapolation
-    beta0              ! of the starting potential
-  INTEGER, PUBLIC :: &
-    history,          &! number of old steps available for potential updating
-    pot_order = 0,    &! type of potential updating ( see update_pot )
-    wfc_order = 0      ! type of wavefunctions updating ( see update_pot )
   !
   ! ... ionic dynamics
   !
@@ -349,12 +318,6 @@ MODULE control_flags
       !------------------------------------------------------------------------
       !
       ! ...  do some checks for consistency
-      !
-      IF ( tnosee .AND. t_diis ) &
-         CALL errore( ' control_flags ', 'DIIS + ELECT. NOSE ? ', 0 )
-      !
-      !IF ( tortho .AND. t_diis ) &
-      !   CALL errore(' control_flags ','DIIS, ORTHO NOT PERMITTED',0)
       !
       IF ( tnosep .AND. tcp ) &
          CALL errore( ' control_flags ', ' TCP AND TNOSEP BOTH TRUE', 0 )

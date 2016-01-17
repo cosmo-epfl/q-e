@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2013 Quantum ESPRESSO group
+! Copyright (C) 2001-2015 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -11,6 +11,8 @@ MODULE mp_world
   !
   USE mp, ONLY : mp_barrier, mp_start, mp_end, mp_stop
   USE io_global, ONLY : meta_ionode_id, meta_ionode
+  !
+  USE parallel_include
   !
   IMPLICIT NONE 
   SAVE
@@ -41,16 +43,23 @@ CONTAINS
     IMPLICIT NONE
     INTEGER, INTENT(IN) :: my_world_comm
     INTEGER :: ierr
+#if defined(__OPENMP) 	 
+    INTEGER :: PROVIDED
+#endif
     !
     world_comm = my_world_comm
     !
     ! ... check if mpi is already initialized (library mode) or not
     ! 
 #if defined(__MPI)
-    CALL mpi_initialized ( library_mode, ierr)
+    CALL MPI_Initialized ( library_mode, ierr)
     IF (ierr/=0) CALL mp_stop( 8000 )
     IF (.NOT. library_mode ) THEN
-       CALL mpi_init(ierr)
+#if defined(__OPENMP) 	 
+       CALL MPI_Init_thread(MPI_THREAD_FUNNELED, PROVIDED, ierr)
+#else 	 
+       CALL MPI_Init(ierr)
+#endif
        IF (ierr/=0) CALL mp_stop( 8001 )
     END IF
 #endif

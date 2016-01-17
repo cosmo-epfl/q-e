@@ -1,12 +1,11 @@
 !
-! Copyright (C) 2011-2013 Quantum ESPRESSO group
+! Copyright (C) 2001-2015 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
 ! or http://www.gnu.org/copyleft/gpl.txt .
 !
 !--------------------------------------------------------------------
-
 MODULE charg_resp
   !----------------------------------------------------------------------------
   ! This module contains charge response calculation related variables & 
@@ -128,7 +127,7 @@ CONTAINS
   !---------------------------------------------------------------------
   SUBROUTINE lr_project_init()
     !-----------------------------------------------------------------------
-    ! Handles the inital calculation of the oscilator strengths for 
+    ! Handles the initial calculation of the oscilator strengths for 
     ! projection analysis and writes them to stdout.
     !
     USE kinds,         ONLY : DP
@@ -200,6 +199,8 @@ CONTAINS
     LOGICAL :: exst
     INTEGER :: iter_restart,i,j
     CHARACTER(len=256) :: filename
+    REAL(KIND=DP) :: discard
+    
 
     CALL start_clock( 'post-processing' )
     IF (lr_verbosity > 5) WRITE(stdout,'("<read_wT_beta_gamma_z>")')
@@ -231,6 +232,13 @@ CONTAINS
        IF (.not. allocated(w_T_beta_store))  ALLOCATE(w_T_beta_store(iter_restart))
        IF (.not. allocated(w_T_gamma_store))  ALLOCATE(w_T_gamma_store(iter_restart))
        READ(158,*,end=301,err=303) w_T_norm0_store
+       READ(158,*,end=301,err=303) discard
+       READ(158,*,end=301,err=303) discard
+       READ(158,*,end=301,err=303) discard
+       READ(158,*,end=301,err=303) discard
+       READ(158,*,end=301,err=303) discard
+       READ(158,*,end=301,err=303) discard
+       READ(158,*,end=301,err=303) discard
        !print *, discard
        !
        !write(stdout,'("--------------Lanczos Matrix-------------------")')
@@ -277,7 +285,7 @@ CONTAINS
     !
     USE lr_variables,         ONLY : itermax,beta_store,gamma_store, &
          LR_polarization,charge_response, n_ipol, &
-         itermax_int,project
+         itermax_int,project,sum_rule
     USE fft_base,             ONLY : dfftp
     USE noncollin_module,     ONLY : nspin_mag
 
@@ -300,22 +308,144 @@ CONTAINS
     IF (lr_verbosity > 5) THEN
        WRITE(stdout,'("<lr_calc_w_T>")')
     ENDIF
-    IF (omeg == 0.D0) THEN
-       CALL stop_clock( 'post-processing' )
-       RETURN
-    END IF
+    !IF (omeg == 0.D0) THEN
+    !   CALL stop_clock( 'post-processing' )
+    !   RETURN
+    !END IF
     !
     ALLOCATE(a(itermax_int))
     ALLOCATE(b(itermax_int))
     ALLOCATE(c(itermax_int))
     ALLOCATE(r(itermax_int))
-    !
     a(:) = (0.0d0,0.0d0)
     b(:) = (0.0d0,0.0d0)
     c(:) = (0.0d0,0.0d0)
     w_T(:) = (0.0d0,0.0d0)
     !
     WRITE(stdout,'(/,5X,"Calculating response coefficients")')
+     
+    if (sum_rule == -2 ) THEN
+    WRITE(stdout,'(/,5X,"S - 2 will be attempted")')
+    resonance_condition=.true.
+    IF (allocated(rho_1_tot)) DEALLOCATE (rho_1_tot)
+    IF (.not. allocated(rho_1_tot_im)) ALLOCATE(rho_1_tot_im(dfftp%nnr,nspin_mag))
+    rho_1_tot_im(:,:)=cmplx(0.0d0,0.0d0,dp)
+    !
+    !
+    !
+    ! prepare tridiagonal (w-L) for the given polarization
+    !
+    omeg=0
+    w_t(:)=(0.0d0,0.0d0)
+    do while (omeg < 100) 
+    omeg=omeg+0.01
+    a(:) = cmplx(omeg,epsil,dp)
+    !
+       !Read the actual iterations
+       DO i=1,itermax
+          !
+          !b(i)=-w_T_beta_store(i)
+          !c(i)=-w_T_gamma_store(i)
+          b(i)=cmplx(-w_T_beta_store(i),0.0d0,dp)
+          c(i)=cmplx(-w_T_gamma_store(i),0.0d0,dp)
+          !
+       ENDDO
+       IF (itermax_int>itermax .and. itermax > 151) THEN
+          !calculation of the average
+          !OBM: (I am using the code from tddfpt_pp, I am not very confortable
+          ! with the mechanism discarding the "bad" points.
+          average=0.d0
+          av_amplitude=0.d0
+          counter=0
+          skip=.false.
+          !
+          DO i=151,itermax
+             !
+             IF (skip .eqv. .true.) THEN
+                skip=.false.
+                CYCLE
+             ENDIF
+             !
+             IF (mod(i,2)==1) THEN
+                !
+                IF ( i/=151 .and. abs( w_T_beta_store(i)-average/counter ) > 2.d0 ) THEN
+                   !
+                   !if ( i.ne.151 .and. counter == 0) counter = 1
+                   skip=.true.
+                   !
+                ELSE
+                   !
+                   average=average+w_T_beta_store(i)
+                   av_amplitude=av_amplitude+w_T_beta_store(i)
+                   counter=counter+1
+                   !print *, "t1 ipol",ip,"av_amp",av_amplitude(ip)
+                   !
+                ENDIF
+                !
+             ELSE
+                !
+                IF ( i/=151 .and. abs( w_T_beta_store(i)-average/counter ) > 2.d0 ) THEN
+                   !
+                   !if ( i.ne.151 .and. counter == 0) counter = 1
+                   skip=.true.
+                   !
+                ELSE
+                   !
+                   average=average+w_T_beta_store(i)
+                   av_amplitude=av_amplitude-w_T_beta_store(i)
+                   counter=counter+1
+                   !print *, "t2 ipol",ip,"av_amp",av_amplitude(ip)
+                   !
+                ENDIF
+                !
+             ENDIF
+             !
+             !
+          ENDDO
+          average=average/counter
+          av_amplitude=av_amplitude/counter
+          !
+          !
+          !extrapolated part of b and c
+          DO i=itermax,itermax_int
+             !
+             IF (mod(i,2)==1) THEN
+                !
+                b(i)=cmplx((-average-av_amplitude),0.0d0,dp)
+                c(i)=b(i)
+                !
+             ELSE
+                !
+                b(i)=cmplx((-average+av_amplitude),0.0d0,dp)
+                c(i)=b(i)
+                !
+             ENDIF
+             !
+          ENDDO
+
+    ENDIF
+    !
+    r(:) =(0.0d0,0.0d0)
+    r(1)=(1.0d0,0.0d0)
+    !
+    ! solve the equation
+    !
+    CALL zgtsv(itermax_int,1,b,a,c,r(:),itermax_int,info)
+    IF(info /= 0) CALL errore ('calc_w_T', 'unable to solve tridiagonal system', 1 )
+    !
+    !Check if we are close to a resonance
+    !
+    norm=sum(abs(aimag(r(:))/dble(r(:))))
+    norm=norm/(1.0d0*itermax_int)
+    ! Is this a correct way to find imaginary part?
+    IF (abs(norm) > 0.1) THEN
+         w_t(:)=w_t(:)+r(:)/omeg
+    END IF
+    !print *,"norm",norm
+    !
+    !
+    END DO
+    ELSE IF (sum_rule == -99 ) THEN
     !
     !
     !
@@ -468,11 +598,12 @@ CONTAINS
     IF (project) THEN
        DO ip=1,w_T_npol
           !
-          chi(LR_polarization,ip)=zdotc(itermax,w_T_zeta_store(ip,:),1,w_T(:),1)
+          chi(LR_polarization,ip)=ZDOTC(itermax,w_T_zeta_store(ip,:),1,w_T(:),1)
           chi(LR_polarization,ip)=chi(LR_polarization,ip)*cmplx(w_T_norm0_store,0.0d0,dp)
           !
           WRITE(stdout,'(5X,"Chi_",I1,"_",I1,"=",2(E15.5,1x))') LR_polarization,ip,chi(LR_polarization,ip)
        ENDDO
+    ENDIF
     ENDIF
     !
     !
@@ -508,7 +639,7 @@ CONTAINS
     USE uspp_param,               ONLY : upf, nh
     USE becmod,                   ONLY : becp,calbec
     USE ions_base,                ONLY : ityp,nat,ntyp=>nsp
-    USE realus,                   ONLY : npw_k,real_space_debug,fft_orbital_gamma,calbec_rs_gamma
+    USE realus,                   ONLY : npw_k,real_space_debug,invfft_orbital_gamma,calbec_rs_gamma
     USE gvect,                    ONLY : gstart
     USE klist,                    ONLY : nks
     USE lr_variables,             ONLY : lr_verbosity, itermax, LR_iteration, LR_polarization, &
@@ -544,7 +675,7 @@ CONTAINS
        !BECP initialisation for evc1
        IF (real_space_debug >6) THEN
           DO ibnd=1,nbnd,2
-             CALL fft_orbital_gamma(evc1(:,:,1),ibnd,nbnd)
+             CALL invfft_orbital_gamma(evc1(:,:,1),ibnd,nbnd)
              CALL calbec_rs_gamma(ibnd,nbnd,becp%r)
           ENDDO
        ELSE
@@ -560,7 +691,7 @@ CONTAINS
           !ultrasoft part
           !
           IF (okvan) THEN
-             !initalization
+             !initialization
              scal = 0.0d0
              !
              !Calculation of  qq<evc0|beta><beta|evc1>
@@ -654,7 +785,7 @@ CONTAINS
     USE uspp_param,               ONLY : upf, nh
     USE becmod,                   ONLY : becp,calbec
     USE ions_base,                ONLY : ityp,nat,ntyp=>nsp
-    USE realus,                   ONLY : npw_k,real_space_debug,fft_orbital_gamma,calbec_rs_gamma
+    USE realus,                   ONLY : npw_k,real_space_debug,invfft_orbital_gamma,calbec_rs_gamma
     USE gvect,                    ONLY : gstart
     USE klist,                    ONLY : nks
     USE lr_variables,             ONLY : lr_verbosity, itermax, LR_iteration, LR_polarization, &
@@ -1349,7 +1480,7 @@ CONTAINS
        ! origin
        WRITE(158,'(3f10.6)') 0.0d0, 0.0d0, 0.0d0
        ! 1st spanning (=lattice) vector
-       WRITE(158,'(3f10.6)') (BOHR_RADIUS_ANGS*alat*at(i,1),i=1,3) ! in ANGSTROMS
+       WRITE(158,'(3f10.6)') (BOHR_RADIUS_ANGS*alat*at(i,1),i=1,3) ! in ANSTROMS
        ! 2nd spanning (=lattice) vector
        WRITE(158,'(3f10.6)') (BOHR_RADIUS_ANGS*alat*at(i,2),i=1,3)
        ! 3rd spanning (=lattice) vector
@@ -1474,7 +1605,7 @@ CONTAINS
     ! origin
     WRITE(158,'(3f10.6)') 0.0d0, 0.0d0, 0.0d0
     ! 1st spanning (=lattice) vector
-    WRITE(158,'(3f10.6)') (BOHR_RADIUS_ANGS*alat*at(i,1),i=1,3) ! in ANGSTROMS
+    WRITE(158,'(3f10.6)') (BOHR_RADIUS_ANGS*alat*at(i,1),i=1,3) ! in ANSTROMS
     ! 2nd spanning (=lattice) vector
     WRITE(158,'(3f10.6)') (BOHR_RADIUS_ANGS*alat*at(i,2),i=1,3)
     ! 3rd spanning (=lattice) vector

@@ -111,7 +111,7 @@ subroutine lanczos_state_k(ik,nstates, nsteps,in_states,d,f,omat,dpsi_ipol, t_ou
   call mp_sum(n_1(:),world_comm)
   n_1(:)=dsqrt(n_1(:))
    write(stdout,*) 'Lanczos N1', n_1(:)
-  call flush_unit(stdout)
+  FLUSH(stdout)
 
 
 !calculate alpha
@@ -124,7 +124,7 @@ subroutine lanczos_state_k(ik,nstates, nsteps,in_states,d,f,omat,dpsi_ipol, t_ou
   call mp_sum(alpha(:),world_comm)
   alpha(:)=alpha(:)/n_1(:)
   write(stdout,*) 'Lanczos alpha', alpha(:)
-  call flush_unit(stdout)
+  FLUSH(stdout)
 
 !calculate psi_2 and beta
   do is=1,nstates
@@ -140,7 +140,7 @@ subroutine lanczos_state_k(ik,nstates, nsteps,in_states,d,f,omat,dpsi_ipol, t_ou
   call mp_sum(beta(:),world_comm)
   beta(:)=dsqrt(beta(:))
   write(stdout,*) 'Lanczos beta', beta(:)
-  call flush_unit(stdout)
+  FLUSH(stdout)
 
   do is=1,nstates
      psi_2(:,is)=psi_2(:,is)/beta(is)
@@ -159,7 +159,7 @@ subroutine lanczos_state_k(ik,nstates, nsteps,in_states,d,f,omat,dpsi_ipol, t_ou
      call mp_sum(d(1,is),world_comm)
   enddo
   write(stdout,*) 'Lanczos Diagonal 1', d(1,:)
-    call flush_unit(stdout)
+    FLUSH(stdout)
 
 !calculate f
 
@@ -172,7 +172,7 @@ subroutine lanczos_state_k(ik,nstates, nsteps,in_states,d,f,omat,dpsi_ipol, t_ou
   enddo
 
   write(stdout,*) 'ATTENZIONE1'
-  call flush_unit(stdout)
+  FLUSH(stdout)
   omat(:,:,:)=(0.d0,0.d0)
   
   do is=1,nstates
@@ -189,7 +189,7 @@ subroutine lanczos_state_k(ik,nstates, nsteps,in_states,d,f,omat,dpsi_ipol, t_ou
   !do iterate
   do it=2,nsteps
      write(stdout,*) 'lanczos h_psi'
-     call flush_unit(stdout)
+     FLUSH(stdout)
 
 !calculate H|\phi_i+1>
      !call h_psi( npw, npw, nstates,psi_2(:,:), u_1 )
@@ -199,7 +199,7 @@ subroutine lanczos_state_k(ik,nstates, nsteps,in_states,d,f,omat,dpsi_ipol, t_ou
      endif
 
      write(stdout,*) 'lanczos alfa beta gamma'
-     call flush_unit(stdout)
+     FLUSH(stdout)
 !calculate n_1
      n_1(:)=0.d0
      do is=1,nstates
@@ -251,7 +251,7 @@ subroutine lanczos_state_k(ik,nstates, nsteps,in_states,d,f,omat,dpsi_ipol, t_ou
         psi_3(:,is)=psi_3(:,is)/gamma(is)
      enddo
      write(stdout,*) 'lanczos d f omat'
-     call flush_unit(stdout)
+     FLUSH(stdout)
 
 
 !calculate d
@@ -324,6 +324,7 @@ subroutine  h_psi_scissor( ik,lda, n, m, psi, hpsi )
   USE mp, ONLY : mp_sum
   USE mp_world, ONLY : world_comm
   USE control_ph,           ONLY : nbnd_occ
+  USE constants, ONLY : rytoev
 
   implicit none
 
@@ -349,10 +350,10 @@ subroutine  h_psi_scissor( ik,lda, n, m, psi, hpsi )
 
   do jj=1,m
      do ii=1,nbnd_occ(ik)
-        prod(ii,jj)=prod(ii,jj)*scissor
+        prod(ii,jj)=prod(ii,jj)*(scissor(1)-scissor(2))/rytoev
      enddo
   enddo
-  call dgemm('N','N',2*npw,m,nbnd_occ(ik),1.d0,evc,2*npwx,prod,nbnd_occ(ik),1.d0,hpsi,2*lda)
+  call dgemm('N','N',2*npw,m,nbnd_occ(ik),1.d0,evc,2*npwx,prod,nbnd_occ(ik),1.d0+scissor(2)/rytoev,hpsi,2*lda)
 
 
   deallocate(prod)

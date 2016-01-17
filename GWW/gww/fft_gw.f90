@@ -422,7 +422,7 @@
 
       end if
 
-#ifdef __PARA
+#ifdef __MPI
       CALL MPI_ALLTOALL( sndbuf, fftd%numrows * fftd%numpw, MPI_DOUBLE_COMPLEX,  &
                          rcvbuf, fftd%numrows * fftd%numpw, MPI_DOUBLE_COMPLEX, world_comm, ierr )
 #else
@@ -660,7 +660,7 @@
 
       enddo
 
-#ifdef __PARA
+#ifdef __MPI
       CALL MPI_ALLTOALL( sndbuf, fftd%numrows * fftd%numpw, MPI_DOUBLE_COMPLEX,  &
                          rcvbuf, fftd%numrows * fftd%numpw, MPI_DOUBLE_COMPLEX, world_comm, ierr )
 #else
@@ -702,7 +702,8 @@
 !uses FFTW machinery
 !does not reorder data but puts appropriate factors
    USE  constants,           ONLY :  pi
-   USE  fft_scalar,          ONLY : cft_1z, good_fft_order
+   USE  fft_scalar,          ONLY : cft_1z
+   USE  fft_support,         ONLY : good_fft_order
 
 
   implicit none

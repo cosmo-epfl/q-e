@@ -44,7 +44,7 @@ MODULE fft_custom
      INTEGER,  DIMENSION(:), POINTER :: ig1t,ig2t,ig3t
      INTEGER :: nlgt
      INTEGER :: npwt,npwxt
-     LOGICAL :: initalized = .FALSE.
+     LOGICAL :: initialized = .FALSE.
      
   END TYPE fft_cus
 
@@ -102,7 +102,7 @@ CONTAINS
     !     given as input parameters. Input values are kept otherwise.
     !
     USE cell_base,   ONLY : at, tpiba2
-    USE fft_scalar,  ONLY : allowed
+    USE fft_support, ONLY : allowed
     
     IMPLICIT NONE
     
@@ -350,10 +350,10 @@ CONTAINS
     
     IF ( gamma_only) CALL index_minusg_custom(fc)
        
-    
     !set npwt,npwxt
-    !This should eventually be calcualted somewhere else with 
+    !This should eventually be calculated somewhere else with 
     !n_plane_waves() but it is good enough for gamma_only
+
     IF(gamma_only) THEN
        fc%npwt=0
        fc%npwxt=0
@@ -426,13 +426,13 @@ CONTAINS
 
     TYPE(fft_cus) :: fc
 
-    IF(.NOT. fc%initalized) RETURN
+    IF(.NOT. fc%initialized) RETURN
 
     DEALLOCATE(fc%nlt,fc%nltm)
     CALL fft_dlay_deallocate(fc%dfftt)
     DEALLOCATE(fc%ig_l2gt,fc%ggt,fc%gt)
     DEALLOCATE(fc%ig1t,fc%ig2t,fc%ig3t)
-    fc%initalized=.FALSE.
+    fc%initialized=.FALSE.
 
     RETURN
 
@@ -473,8 +473,8 @@ CONTAINS
     INTEGER, INTENT(IN) :: nproc ! number of procs in the communicator
     INTEGER, INTENT(IN) :: comm  ! communicator
 
-    INTEGER, INTENT(IN) :: ig_l2g1(ngwl1),ig_l2g2(ngwl2)
     INTEGER, INTENT(IN) :: ngwl1,ngwl2
+    INTEGER, INTENT(IN) :: ig_l2g1(ngwl1),ig_l2g2(ngwl2)
     ! Global maximum number of G vectors for both grids
     INTEGER, INTENT(in) :: n_g
 

@@ -10,14 +10,16 @@
 PROGRAM phcg
   !-----------------------------------------------------------------------
   !
-  USE pwcom
-  USE cgcom
-  USE ions_base,     ONLY : nat, tau
-  USE io_global,     ONLY : ionode
-  USE io_files,      ONLY : seqopn
-  USE check_stop,    ONLY : check_stop_init
+  USE ions_base,     ONLY: nat, tau
+  USE io_global,     ONLY: ionode
+  USE io_files,      ONLY: seqopn
+  USE check_stop,    ONLY: check_stop_init
   USE mp_global,     ONLY: mp_startup, mp_global_end
   USE environment,   ONLY: environment_start
+  ! The following instruction is just to make it clear that all modules
+  ! from PWscf are needed sooner or later
+  USE pwcom          
+  USE cgcom
 
   IMPLICIT NONE
 
@@ -491,9 +493,10 @@ SUBROUTINE newscf
   USE symm_base,     ONLY : nsym
   USE io_files,      ONLY : iunigk, iunwfc, input_drho, output_drho
   USE ldaU,          ONLY : lda_plus_u
-  USE control_flags, ONLY : restart, io_level, lscf, istep, iprint, &
-                            pot_order, wfc_order, david, max_cg_iter, &
+  USE control_flags, ONLY : restart, io_level, lscf, iprint, &
+                            david, max_cg_iter, &
                             isolve, tr2, ethr, mixing_beta, nmix, niter
+  USE extrapolation, ONLY : extrapolate_charge
   !
   IMPLICIT NONE
   INTEGER :: iter
@@ -510,10 +513,7 @@ SUBROUTINE newscf
   doublegrid=.false.
   lmovecell=.false.
   qcutz=0.0d0
-  istep=1
   iprint=10000
-  pot_order=0
-  wfc_order=0
   input_drho=' '
   output_drho=' '
   starting_wfc='file'
@@ -541,6 +541,7 @@ SUBROUTINE newscf
   !
   CALL openfil
   !
+  CALL extrapolate_charge( 1 )
   CALL hinit1
   CALL electrons ( )
   !

@@ -14,7 +14,7 @@ MODULE command_line_options
   ! ...                      reads the command line,
   ! ...                      interprets QE-specific variables,
   ! ...                      stores the corresponding values
-  ! ...                      (nimage, npot, npool, ntg, nband, ndiag),
+  ! ...                      (nimage, npool, ntg, nband, ndiag),
   ! ...                      broadcasts them to all processors,
   ! ...                      leaves the rest of the command line 
   ! ...                      (including the code name) in "command_line"
@@ -23,20 +23,21 @@ MODULE command_line_options
   ! ... Variables are read on one processor and broadcast to all others
   ! ... because there is no guarantee that all processors have access to
   ! ... command-line options in parallel execution.
-  ! ... "set_command_line" directly sets nimage, npot, npool, ntg, nband, ndiag.
+  ! ... "set_command_line" directly sets nimage, npool, ntg, nband, ndiag.
   ! ... Useful to initialize parallelism when QE is used as a library
   !
   USE mp,        ONLY : mp_bcast
   USE mp_world,  ONLY : root, world_comm
   USE io_global, ONLY : meta_ionode
   !
-  IMPLICIT NONE 
+  IMPLICIT NONE
+  !
   SAVE
   !
   ! ... Number of arguments in command line
   INTEGER :: nargs = 0
   ! ... QE arguments read from command line
-  INTEGER :: nimage_= 1, npool_= 1, npot_= 1, ndiag_ = 0, nband_= 1, ntg_= 1
+  INTEGER :: nimage_= 1, npool_= 1, ndiag_ = 0, nband_= 1, ntg_= 1
   ! ... Indicate if using library init
   LOGICAL :: library_init = .FALSE.
   ! ... input file name read from command line
@@ -47,12 +48,9 @@ MODULE command_line_options
 CONTAINS
   !
   SUBROUTINE get_command_line ( input_command_line )
-
      IMPLICIT NONE
      CHARACTER(LEN=*), OPTIONAL :: input_command_line 
      INTEGER :: narg
-     ! Do not define iargc as external: gfortran doesn't like it
-     INTEGER :: iargc 
      LOGICAL :: read_string
      CHARACTER(LEN=256) :: arg 
      CHARACTER(LEN=6), EXTERNAL :: int_to_char
@@ -66,7 +64,7 @@ CONTAINS
      IF (read_string) THEN
         nargs = my_iargc ( input_command_line )
      ELSE
-        nargs = iargc()
+        nargs = command_argument_count()
      ENDIF
      CALL mp_bcast ( nargs, root, world_comm )
      !
@@ -80,7 +78,7 @@ CONTAINS
         IF (read_string) THEN
            CALL my_getarg ( input_command_line, narg, arg )
         ELSE
-           CALL getarg ( narg, arg )
+           CALL get_command_argument ( narg, arg )
         ENDIF
         narg = narg + 1
         SELECT CASE ( TRIM(arg) )
@@ -88,7 +86,7 @@ CONTAINS
            IF (read_string) THEN
               CALL my_getarg ( input_command_line, narg, input_file_ )
            ELSE
-              CALL getarg ( narg, input_file_ )
+              CALL get_command_argument ( narg, input_file_ )
            ENDIF
               IF ( TRIM (input_file_) == ' ' ) GO TO 15
               narg = narg + 1
@@ -96,23 +94,15 @@ CONTAINS
               IF (read_string) THEN
                  CALL my_getarg ( input_command_line, narg, arg )
               ELSE
-                 CALL getarg ( narg, arg )
+                 CALL get_command_argument ( narg, arg )
               ENDIF
               READ ( arg, *, ERR = 15, END = 15) nimage_
-              narg = narg + 1
-           CASE ( '-npot', '-npots' ) 
-              IF (read_string) THEN
-                 CALL my_getarg ( input_command_line, narg, arg )
-              ELSE
-                 CALL getarg ( narg, arg )
-              ENDIF
-              READ ( arg, *, ERR = 15, END = 15) npot_
               narg = narg + 1
            CASE ( '-nk', '-npool', '-npools') 
               IF (read_string) THEN
                  CALL my_getarg ( input_command_line, narg, arg )
               ELSE
-                 CALL getarg ( narg, arg )
+                 CALL get_command_argument ( narg, arg )
               ENDIF
               READ ( arg, *, ERR = 15, END = 15) npool_
               narg = narg + 1
@@ -120,7 +110,7 @@ CONTAINS
               IF (read_string) THEN
                  CALL my_getarg ( input_command_line, narg, arg )
               ELSE
-                 CALL getarg ( narg, arg )
+                 CALL get_command_argument ( narg, arg )
               ENDIF
               READ ( arg, *, ERR = 15, END = 15) ntg_
               narg = narg + 1
@@ -128,7 +118,7 @@ CONTAINS
               IF (read_string) THEN
                  CALL my_getarg ( input_command_line, narg, arg )
               ELSE
-                 CALL getarg ( narg, arg )
+                 CALL get_command_argument ( narg, arg )
               ENDIF
               READ ( arg, *, ERR = 15, END = 15) nband_
               narg = narg + 1
@@ -136,7 +126,7 @@ CONTAINS
               IF (read_string) THEN
                  CALL my_getarg ( input_command_line, narg, arg )
               ELSE
-                 CALL getarg ( narg, arg )
+                 CALL get_command_argument ( narg, arg )
               ENDIF
               READ ( arg, *, ERR = 15, END = 15) ndiag_
               narg = narg + 1
@@ -155,7 +145,6 @@ CONTAINS
      CALL mp_bcast( command_line, root, world_comm ) 
      CALL mp_bcast( input_file_ , root, world_comm ) 
      CALL mp_bcast( nimage_, root, world_comm ) 
-     CALL mp_bcast( npot_  , root, world_comm ) 
      CALL mp_bcast( npool_ , root, world_comm ) 
      CALL mp_bcast( ntg_   , root, world_comm ) 
      CALL mp_bcast( nband_ , root, world_comm ) 
@@ -206,14 +195,13 @@ CONTAINS
 
   END SUBROUTINE my_getarg 
 
-  SUBROUTINE set_command_line ( nimage, npot, npool, ntg, nband, ndiag)
+  SUBROUTINE set_command_line ( nimage, npool, ntg, nband, ndiag)
      ! directly set command line options without going through the command line
      IMPLICIT NONE
 
-     INTEGER, INTENT(IN), OPTIONAL :: nimage, npot, npool, ntg, nband, ndiag
+     INTEGER, INTENT(IN), OPTIONAL :: nimage, npool, ntg, nband, ndiag
      !
      IF ( PRESENT(nimage) ) nimage_ = nimage
-     IF ( PRESENT(npot)   ) npot_   = npot
      IF ( PRESENT(npool)  ) npool_  = npool
      IF ( PRESENT(ntg)    ) ntg_    = ntg
      IF ( PRESENT(nband)  ) nband_  = nband

@@ -25,7 +25,7 @@ SUBROUTINE summary()
   USE cellmd,          ONLY : calc, cmass
   USE ions_base,       ONLY : amass
   USE gvect,           ONLY : ecutrho, ngm, ngm_g, gcutm
-  USE gvecs,           ONLY : doublegrid, ngms, gcutms
+  USE gvecs,           ONLY : doublegrid, ngms, ngms_g, gcutms
   USE fft_base,        ONLY : dfftp
   USE fft_base,        ONLY : dffts
   USE lsda_mod,        ONLY : lsda, starting_magnetization
@@ -39,24 +39,26 @@ SUBROUTINE summary()
                               tr2, isolve, lmd, lbfgs, iverbosity, tqr
   USE noncollin_module,ONLY : noncolin
   USE spin_orb,        ONLY : domag, lspinorb
-  USE funct,           ONLY : write_dft_name
+  USE funct,           ONLY : write_dft_name, dft_is_hybrid
   USE bp,              ONLY : lelfield, gdir, nppstr_3d, efield, nberrycyc, &
                               l3dstring,efield_cart,efield_cry
   USE fixed_occ,       ONLY : f_inp, tfixed_occ
   USE uspp_param,      ONLY : upf
   USE wvfct,           ONLY : nbnd, ecutwfc, qcutz, ecfixed, q2sigma
-  USE lsda_mod,        ONLY : nspin
   USE mp_bands,        ONLY : intra_bgrp_comm
   USE mp,              ONLY : mp_sum
   USE esm,             ONLY : do_comp_esm, esm_summary
   USE martyna_tuckerman,ONLY: do_comp_mt
   USE realus,          ONLY : real_space
+  USE exx,             ONLY : ecutfock
+  USE fcp_variables,   ONLY : lfcpopt, lfcpdyn
+  USE fcp,             ONLY : fcp_summary
   !
   IMPLICIT NONE
   !
   ! ... declaration of the local variables
   !
-  INTEGER :: i, ipol, apol, na, isym, ik, nt, ibnd, ngmtot
+  INTEGER :: i, ipol, apol, na, ik, nt, ibnd, nk_
     ! counter on the celldm elements
     ! counter on polarizations
     ! counter on direct or reciprocal lattice vect
@@ -66,7 +68,7 @@ SUBROUTINE summary()
     ! counter on beta functions
     ! counter on types
     ! counter on bands
-    ! total number of G-vectors (parallel execution)
+    ! actual number of k-points
     !
   REAL(DP), ALLOCATABLE :: xau(:,:)
     ! atomic coordinate referred to the crystal axes
@@ -91,7 +93,8 @@ SUBROUTINE summary()
      WRITE( stdout, 102) nelec
   END IF
   WRITE( stdout, 103) nbnd, ecutwfc, ecutrho
-  IF ( lscf) WRITE( stdout, 104) tr2, mixing_beta, nmix, mixing_style
+  IF ( dft_is_hybrid () ) WRITE( stdout, 104) ecutfock
+  IF ( lscf) WRITE( stdout, 105) tr2, mixing_beta, nmix, mixing_style
   !
 100 FORMAT( /,/,5X, &
        &     'bravais-lattice index     = ',I12,/,5X, &
@@ -108,6 +111,8 @@ SUBROUTINE summary()
        &     'kinetic-energy cutoff     = ',F12.4,'  Ry',/,5X, &
        &     'charge density cutoff     = ',F12.4,'  Ry')
 104 FORMAT(5X, &
+       &     'cutoff for Fock operator  = ',F12.4,'  Ry')
+105 FORMAT(5X, &
        &     'convergence threshold     = ',1PE12.1,/,5X, &
        &     'mixing beta               = ',0PF12.4,/,5X, &
        &     'number of iterations used = ',I12,2X,A,' mixing')
@@ -143,9 +148,13 @@ SUBROUTINE summary()
   CALL plugin_summary()
   !
   !
-  ! ... ESM
+  ! ... ESM (Effective screening medium)
   !
   IF ( do_comp_esm )  CALL esm_summary()
+  !
+  ! ... FCP (Ficticious charge particle)
+  !
+  IF ( lfcpopt .or. lfcpdyn )  CALL fcp_summary()
   !
   IF ( do_comp_mt )  WRITE( stdout, &
             '(5X, "Assuming isolated system, Martyna-Tuckerman method",/)')
@@ -311,20 +320,29 @@ SUBROUTINE summary()
      DEALLOCATE(xau)
   ENDIF
 
+  IF ( lsda ) THEN
+     !
+     ! ... LSDA case: do not print replicated k-points
+     !
+     nk_ = nkstot/2
+  ELSE
+     nk_ = nkstot
+  END IF
+
   IF (lgauss) THEN
      WRITE( stdout, '(/5x,"number of k points=", i6, 2x, &
           &             a," smearing, width (Ry)=",f8.4)') &
-          &             nkstot, TRIM(smearing), degauss
+          &             nk_, TRIM(smearing), degauss
   ELSE IF (ltetra) THEN
      WRITE( stdout,'(/5x,"number of k points=",i6, &
-          &        " (tetrahedron method)")') nkstot
+          &        " (tetrahedron method)")') nk_
   ELSE
-     WRITE( stdout, '(/5x,"number of k points=",i6)') nkstot
+     WRITE( stdout, '(/5x,"number of k points=",i6)') nk_
 
   ENDIF
-  IF ( iverbosity > 0 .OR. nkstot < 100 ) THEN
+  IF ( iverbosity > 0 .OR. nk_ < 100 ) THEN
      WRITE( stdout, '(23x,"cart. coord. in units 2pi/alat")')
-     DO ik = 1, nkstot
+     DO ik = 1, nk_
         WRITE( stdout, '(8x,"k(",i5,") = (",3f12.7,"), wk =",f12.7)') ik, &
              (xk (ipol, ik) , ipol = 1, 3) , wk (ik)
      ENDDO
@@ -334,7 +352,7 @@ SUBROUTINE summary()
   ENDIF
   IF ( iverbosity > 0 ) THEN
      WRITE( stdout, '(/23x,"cryst. coord.")')
-     DO ik = 1, nkstot
+     DO ik = 1, nk_
         DO ipol = 1, 3
            xkg(ipol) = at(1,ipol)*xk(1,ik) + at(2,ipol)*xk(2,ik) + &
                        at(3,ipol)*xk(3,ik)
@@ -348,13 +366,9 @@ SUBROUTINE summary()
        &               "FFT dimensions: (",i4,",",i4,",",i4,")")') &
        &         ngm_g, dfftp%nr1, dfftp%nr2, dfftp%nr3
   IF (doublegrid) THEN
-     !
-     ngmtot = ngms
-     CALL mp_sum (ngmtot, intra_bgrp_comm)
-     !
      WRITE( stdout, '(/5x,"Smooth grid: ",i8," G-vectors", 5x, &
        &               "FFT dimensions: (",i4,",",i4,",",i4,")")') &
-       &         ngmtot, dffts%nr1, dffts%nr2, dffts%nr3
+       &         ngms_g, dffts%nr1, dffts%nr2, dffts%nr3
   ENDIF
 
   IF ( real_space ) WRITE( stdout, &
@@ -364,7 +378,7 @@ SUBROUTINE summary()
 
   IF (tfixed_occ) THEN
      WRITE( stdout, '(/,5X,"Occupations read from input ")' ) 
-     IF (nspin==2) THEN
+     IF ( lsda ) THEN
         WRITE(stdout, '(/,5X," Spin-up")' ) 
         WRITE(stdout, '(/,(5X,8f9.4))') (f_inp(ibnd,1),ibnd=1,nbnd)
         WRITE(stdout, '(/,5X," Spin-down")' ) 
@@ -374,7 +388,7 @@ SUBROUTINE summary()
      END IF
   END IF
   !
-  CALL flush_unit( stdout )
+  FLUSH( stdout )
   !
   RETURN
   !
@@ -390,9 +404,9 @@ SUBROUTINE print_ps_info
   USE atom,            ONLY : rgrid
   USE uspp_param,      ONLY : upf
   USE funct,           ONLY : dft_is_gradient
-
+  IMPLICIT NONE
   !
-  INTEGER :: nt, lmax
+  INTEGER :: nt, ib, i
   CHARACTER :: ps*35
   !
   DO nt = 1, ntyp
@@ -461,10 +475,8 @@ SUBROUTINE print_vdw_info
   integer :: inlc
 
   inlc = get_inlc()
-  if (inlc==1 .or. inlc==2 .or. inlc==3) then
-
-      WRITE( stdout, '(/5x,"vdW kernel table read from file ",a)')&
-             TRIM (vdw_table_name)
+  if ( inlc > 0 ) then
+     WRITE( stdout, '(/5x,"vdW kernel table read from file ",a)') TRIM (vdw_table_name)
      WRITE( stdout, '(5x,"MD5 check sum: ", a )') vdw_kernel_md5_cksum
   endif 
 
@@ -478,13 +490,13 @@ SUBROUTINE print_symmetries ( iverbosity, noncolin, domag )
   USE symm_base,       ONLY : nsym, nsym_ns, nsym_na, invsym, s, sr, &
                               t_rev, ftau, sname
   USE rap_point_group, ONLY : code_group, nclass, nelem, elem, &
-       which_irr, char_mat, name_rap, name_class, gname, ir_ram
+       which_irr, char_mat, name_rap, name_class, gname, ir_ram, elem_name
   USE rap_point_group_so, ONLY : nrap, nelem_so, elem_so, has_e, &
        which_irr_so, char_mat_so, name_rap_so, name_class_so, d_spin, &
-       name_class_so1
+       name_class_so1, elem_name_so
   USE rap_point_group_is, ONLY : nsym_is, sr_is, ftau_is, d_spin_is, &
        gname_is, sname_is, code_group_is
-  USE cell_base,       ONLY : at
+  USE cell_base,       ONLY : at, ibrav
   USE fft_base, ONLY : dfftp
   !
   IMPLICIT NONE
@@ -576,7 +588,15 @@ SUBROUTINE print_symmetries ( iverbosity, noncolin, domag )
            WRITE( stdout, '(17x," (",3f11.7," )"/)') (sr (3, ipol,isym) , ipol = 1, 3)
         END IF
      END DO
+     !
      CALL find_group(nsym,sr,gname,code_group)
+     !
+     ! ... Do not attempt calculation of classes if the lattice is provided
+     ! ... in input as primitive vectors and not computed from parameters:
+     ! ... the resulting vectors may not be accurate enough for the algorithm 
+     !
+     IF ( ibrav == 0 ) RETURN
+     !
      IF (noncolin.AND.domag) THEN
         CALL find_group(nsym_is,sr_is,gname_is,code_group_is)
         CALL set_irr_rap_so(code_group_is,nclass_ref,nrap,char_mat_so, &
@@ -585,6 +605,8 @@ SUBROUTINE print_symmetries ( iverbosity, noncolin, domag )
              has_e,nclass,nelem_so,elem_so,which_irr_so)
         IF (nclass.ne.nclass_ref) CALL errore('summary', &
              'point double group ?',1)
+        CALL set_class_el_name_so(nsym_is,sname_is,has_e,nclass,nelem_so, &
+                                  elem_so,elem_name_so)
      ELSE
         IF (noncolin) THEN
            CALL set_irr_rap_so(code_group,nclass_ref,nrap,char_mat_so, &
@@ -593,14 +615,18 @@ SUBROUTINE print_symmetries ( iverbosity, noncolin, domag )
                 nelem_so, elem_so,which_irr_so)
            IF (nclass.ne.nclass_ref) CALL errore('summary', &
                 'point double group ?',1)
+           CALL set_class_el_name_so(nsym,sname,has_e,nclass,nelem_so, &
+                                     elem_so,elem_name_so)
         ELSE
            CALL set_irr_rap(code_group,nclass_ref,char_mat,name_rap, &
                 name_class,ir_ram)
            CALL divide_class(code_group,nsym,sr,nclass,nelem,elem,which_irr)
            IF (nclass.ne.nclass_ref) CALL errore('summary','point group ?',1)
+           CALL set_class_el_name(nsym,sname,nclass,nelem,elem,elem_name)
         ENDIF
      ENDIF
      CALL write_group_info(.true.)
+     !
   END IF
   !
 END SUBROUTINE print_symmetries

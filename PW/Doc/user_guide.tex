@@ -1,5 +1,5 @@
 \documentclass[12pt,a4paper]{article}
-\def\version{5.1.1}
+\def\version{5.3}
 \def\PWscf{\texttt{PWscf}}
 \def\qe{{\sc Quantum ESPRESSO}}
 
@@ -30,32 +30,12 @@
 \date{}
 
 \def\qeImage{../../Doc/quantum_espresso.pdf}
-\def\democritosImage{../../Doc/democritos.pdf}
-
-\begin{htmlonly}
-\def\qeImage{../../Doc/quantum_espresso.png}
-\def\democritosImage{../../Doc/democritos.png}
-\end{htmlonly}
 
 \title{
-  \includegraphics[width=5cm]{\qeImage} \hskip 2cm
-  \includegraphics[width=6cm]{\democritosImage}\\
-  \vskip 1cm
+  \includegraphics[width=5cm]{\qeImage} \\
   % title
-  \Huge User's Guide for \PWscf\smallskip
-  \Large (version \version)
+  \Huge \PWscf\ User's Guide (v.\version) 
 }
-%\endhtmlonly
-
-%\latexonly
-%\title{
-% \epsfig{figure=quantum_espresso.png,width=5cm}\hskip 2cm
-% \epsfig{figure=democritos.png,width=6cm}\vskip 1cm
-%  % title
-%  \Huge User's Guide for \qe \smallskip
-%  \Large (version \version)
-%}
-%\endlatexonly
 
 \maketitle
 
@@ -139,11 +119,11 @@ and many others. We quote in particular:
   built upon previous work by Guido Fratesi (Univ.Milano Bicocca)
   and Riccardo Mazzarello (ETHZ-USI Lugano);
   \item Matteo Cococcioni (Univ. Minnesota) for DFT+U implementation;
-  \item Timo Thonhauser's group (Wake Forest University) for vdW-DF and
-  variants;
+  \item Timo Thonhauser (WFU) for vdW-DF, svdW-DF, and variants;
 \end{itemize}
 and the more recent contributors:
 \begin{itemize}
+  \item Thomas Markovich (Harvard) for Tkatchenko-Scheffler stress in PWscf;
   \item Jong-Won Song (RIKEN) for Gau-PBE functional;
   \item Alberto Otero de la Roza (Merced Univ.) for XDM (exchange-hole 
    dipole moment) model of dispersions, PW86 (unrevised) and B86B functionals;
@@ -228,7 +208,6 @@ taking into account periodicity
   molecular structure visualization program.
   BEWARE: the  \texttt{pwi2xsf.sh} shell script
   requires the  \texttt{pwi2xsf.x} executables to be located somewhere in your PATH. 
-\item  \texttt{PW/tools/band\_plot.x}: undocumented and possibly obsolete 
 \item  \texttt{PW/tools/bs.awk},  \texttt{PW/tools/mv.awk} are scripts that process the output of \pwx\ (not
 data files!). Usage: 
 \begin{verbatim}
@@ -238,8 +217,6 @@ data files!). Usage:
 The files so produced are suitable for use with  \texttt{xbs}, a very simple
 X-windows utility to display molecules, available at:\\
  \texttt{http://www.ccl.net/cca/software/X-WINDOW/xbsa/README.shtml}
-\item  \texttt{PW/tools/kvecs\_FS.x},  \texttt{PW/tools/bands\_FS.x}: utilities for Fermi Surface plotting
-  using XCrySDen (contributed by the late Prof. Eyvaz)
 \item  \texttt{PW/tools/cif2qe.sh}: script converting from CIF 
 (Crystallographic Information File) to a format suitable for \qe.
 Courtesy of Carlo Nervi (Univ. Torino, Italy).
@@ -356,7 +333,11 @@ an unusable state.
 \subsection{Electronic structure calculations}
 \paragraph{Single-point (fixed-ion) SCF calculation} 
 Set \texttt{calculation='scf'} (this is actually the default).
-Namelists \&IONS and \&CELL will be ignored. See Example 01.
+Namelists \&IONS and \&CELL will be ignored. For LSDA spin-polarized 
+calculations (that is: with a fixed quantization axis for magnetization),
+set \texttt{nspin=2}. Note that the number of k-points will be internally
+doubled (one set of k-points for spin-up, one set for spin-down).
+See Example 01.
 
 \paragraph{Band structure calculation}
 First perform a SCF calculation as above;
@@ -400,7 +381,8 @@ total magnetization is zero.
 If \texttt{starting\_magnetization} is different from zero, it makes a 
 noncollinear spin polarized calculation with spin-orbit interaction. The 
 final spin magnetization might be zero or different from zero depending 
-on the system. 
+on the system. Note that the code will look only for symmetries that leave
+the starting magnetization unchanged.
 
 Furthermore to make a spin-orbit calculation you must use fully
 relativistic pseudopotentials at least for the atoms in which you
@@ -408,8 +390,8 @@ think that spin-orbit interaction is large. If all the pseudopotentials
 are scalar
 relativistic the calculation becomes equivalent to a noncollinear
 calculation without spin orbit. (Andrea Dal Corso, 2007-07-27)
-See Example 06 for noncollinear magnetism, Example 07
-for spin-orbit interactions.
+See Example 06 for noncollinear magnetism, Example 07 (and references
+quoted therein) for spin-orbit interactions.
 
 \paragraph{DFT+U}
 DFT+U (formerly known as LDA+U) calculation can be
@@ -717,6 +699,12 @@ $$T_{scf} = d_2 N_{r1} N_{r2} N_{r3} + d_3 N_{r1} N_{r2} N_{r3}
             log(N_{r1} N_{r2} N_{r3} )$$
 where $d_1, d_2$ are prefactors.
 
+For hybrid DFTs, the dominant term is by far the calculation of the 
+nonlocal $(V_x\psi)$ product, taking as much as
+$$T_{exx} = e N_k N_q M^2 N_1 N_2N_3 log(N_1 N_2 N_3)$$
+where $N_q$ is the number of points in the $k+q$ grid, determined by
+options \texttt{nqx1,nqx2,nqx3}, $e$ is a prefactor.
+
 The above estimates are for serial execution. In parallel execution,
 each contribution may scale in a different manner with the number of processors (see below).
 
@@ -728,6 +716,11 @@ $$ O = m M N + P N + p N_1 N_2 N_3 + q N_{r1} N_{r2} N_{r3}$$
 with $m, p, q$ = small factors; all other variables have the same meaning as
 above. Note that if the $\Gamma-$point only ($k=0$) is used to sample the 
 Brillouin Zone, the value of N will be cut into half.
+
+For hybrid DFTs, additional storage of $O_x$ double precision complex 
+numbers is needed (for Fourier-transformed Kohn-Sham states), with
+$O_x = x N_q M N_1N_2N_3$ and $x=0.5$ for $\Gamma-$only 
+calculations, $x=1$ otherwise.
 
 The memory required by the phonon code follows the same patterns, with
 somewhat larger factors $m, p, q$.
@@ -751,7 +744,7 @@ The effectiveness of parallelization is ultimately judged by the
 \begin{itemize}
 \item the size and type of the system under study;
 \item the judicious choice of the various levels of parallelization 
-(detailed in Sec.\ref{SubSec:para});
+(detailed in Sec.\ref{SubSec:badpara});
 \item the availability of fast interprocess communications (or lack of it).
 \end{itemize}
 Ideally one would like to have linear scaling, i.e. $T \sim T_0/N_p$ for 
@@ -765,8 +758,9 @@ Parallelization on k-points:
 \item guarantees (almost) linear scaling if the number of k-points
 is a multiple of the number of pools;
 \item requires little communications (suitable for ethernet communications);
-\item does not reduce the required memory per processor (unsuitable for 
-large-memory jobs).
+\item reduces the required memory per processor by distributing wavefunctions
+(but not other quantities like the charge density), unless you set 
+\texttt{disk\_io='high'}.
 \end{itemize}
 Parallelization on PWs:
 \begin{itemize}
@@ -980,7 +974,9 @@ Since QE 5.1 restarting from an arbitrary point of the code is no more supported
 The code must terminate properly in order for restart to be possible. A clean stop can be triggered by one the following three conditions:
 \begin{enumerate}
 \item The amount of time specified by the input variable max\_seconds is reached
-\item A file named "\$prefix.EXIT" is found in the execution directory, \$prefix is the prefix specified in the control namelist
+\item The user creates a file named "\$prefix.EXIT" either in the working
+directory or in output directory "\$outdir" 
+(variables \$outdir and \$prefix as specified in the control namelist)
 \item (experimental) The code is compiled with signal-trapping support and one of the trapped signals is received (see the next section for details).
 \end{enumerate}
 
@@ -1039,14 +1035,14 @@ Possible reasons:
 If you get error messages in the example scripts -- i.e. not errors in
 the codes -- on a parallel machine, such as e.g.: 
 {\em run example: -n: command not found}
-you may have forgotten 
-the " " in the definitions of PARA\_PREFIX and PARA\_POSTFIX.
+you may have forgotten to properly define PARA\_PREFIX and PARA\_POSTFIX.
 
 \paragraph{pw.x prints the first few lines and then nothing happens
   (parallel execution)} 
 If the code looks like it is not reading from input, maybe
 it isn't: the MPI libraries need to be properly configured to accept input
-redirection. Use \texttt{pw.x -i} and the input file name (see Sec.\ref{SubSec:para}), or inquire with
+redirection. Use \texttt{pw.x -i} and the input file name (see
+Sec.\ref{SubSec:badpara}), or inquire with
 your local computer wizard (if any). Since v.4.2, this is for sure the
 reason if the code stops at {\em Waiting for input...}.
 

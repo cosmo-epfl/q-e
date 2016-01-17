@@ -48,7 +48,7 @@ PROGRAM pw2gw
   !   set default values for variables in namelist
   !
   prefix = 'pwscf'
-  CALL get_env( 'ESPRESSO_TMPDIR', outdir )
+  CALL get_environment_variable( 'ESPRESSO_TMPDIR', outdir )
   IF ( trim( outdir ) == ' ' ) outdir = './'
   what   = 'gw'
   use_gmaps = .false.
@@ -275,7 +275,7 @@ SUBROUTINE compute_gw( use_gmaps )
         IF (t_single) THEN
            WRITE (io) (((float(s(i,j,k)),j=1,3),i=1,3),k=1,nsym)
         ELSE
-           WRITE (io) (((dfloat(s(i,j,k)),j=1,3),i=1,3),k=1,nsym)
+           WRITE (io) (((dble(s(i,j,k)),j=1,3),i=1,3),k=1,nsym)
         ENDIF
         IF (ii(3) == 1) THEN
            ! READ (10,1020) ((VOFFSET(I,J),I=1,3),J=1,NOP)
@@ -1134,8 +1134,8 @@ subroutine gen_us_djl (ik,npw,djl,size_tab,vec_tab, spline_ps, vec_tab_d2y)
   !
   implicit none
   !
-  real(DP), intent(inout) ::djl(1:npw)
   integer, intent(in) :: ik, npw
+  real(DP), intent(inout) ::djl(1:npw)
   integer, intent(in) :: size_tab
   real(DP), intent(in) :: vec_tab(1:size_tab)
   real(DP), intent(in) :: vec_tab_d2y(1:size_tab)
@@ -1221,8 +1221,8 @@ subroutine gen_us_vkb0 (ik,npw,vkb0,size_tab,vec_tab, spline_ps, vec_tab_d2y)
   !
   implicit none
   !
-  real(DP), intent(inout) ::vkb0(1:npw)
   integer, intent(in) :: ik, npw
+  real(DP), intent(inout) ::vkb0(1:npw)
   integer, intent(in) :: size_tab
   real(DP), intent(in) :: vec_tab(1:size_tab)
   real(DP), intent(in) :: vec_tab_d2y(1:size_tab)

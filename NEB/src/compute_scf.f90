@@ -21,13 +21,10 @@ SUBROUTINE compute_scf( fii, lii, stat  )
   USE basis,            ONLY : starting_wfc, starting_pot
   USE kinds,            ONLY : DP
   USE constants,        ONLY : e2
-  USE control_flags,    ONLY : conv_elec, istep, history, pot_order
-  USE vlocal,           ONLY : strf
-  USE cell_base,        ONLY : bg, alat
-  USE gvect,            ONLY : ngm, g, eigts1, eigts2, eigts3
-  USE fft_base,         ONLY : dfftp
-  USE ions_base,        ONLY : tau, nat, nsp, ityp
-  USE ener,             ONLY : etot
+  USE control_flags,    ONLY : conv_elec
+  USE cell_base,        ONLY : alat
+  USE ions_base,        ONLY : tau, nat, ityp, zv
+  USE ener,             ONLY : etot, ef
   USE force_mod,        ONLY : force
   USE io_files,         ONLY : prefix, tmp_dir, wfc_dir,  iunupdate, seqopn, &
                                exit_file, iunexit, delete_if_present
@@ -43,6 +40,10 @@ SUBROUTINE compute_scf( fii, lii, stat  )
   USE mp,               ONLY : mp_bcast, mp_barrier, mp_sum, mp_min
   USE path_io_routines, ONLY : new_image_init, get_new_image, &
                                stop_other_images
+  USE fcp_opt_routines, ONLY : fcp_neb_nelec, fcp_neb_ef
+  USE fcp_variables,    ONLY : lfcpopt
+  USE klist,            ONLY : nelec, tot_charge
+  USE extrapolation,    ONLY : update_neb
   !
   IMPLICIT NONE
   !
@@ -54,8 +55,6 @@ SUBROUTINE compute_scf( fii, lii, stat  )
   REAL(DP)              :: tcpu
   CHARACTER (LEN=256)   :: tmp_dir_saved
   LOGICAL               :: file_exists, opnd
-  REAL(DP), ALLOCATABLE :: tauold(:,:,:)
-   ! previous positions of atoms (needed by extrapolation)
   !
   CHARACTER(LEN=6), EXTERNAL :: int_to_char
   !
@@ -63,18 +62,15 @@ SUBROUTINE compute_scf( fii, lii, stat  )
   fii_ = fii
   lii_ = lii
   !
-  istep = istep_path
   istat = 0
   !
-  CALL flush_unit( iunpath )
-  !
-  ALLOCATE( tauold( 3, nat, 3 ) )
+  FLUSH( iunpath )
   !
   tmp_dir_saved = tmp_dir
   !
   IF ( nimage > 1 ) THEN
      !
-     ! ... vectors pes and grad_pes are initalized to zero for all images on
+     ! ... vectors pes and grad_pes are initialized to zero for all images on
      ! ... all nodes: this is needed for the final mp_sum()
      !
      IF ( my_image_id == root_image ) THEN
@@ -90,6 +86,24 @@ SUBROUTINE compute_scf( fii, lii, stat  )
         !
         pes(fii:lii)        = 0.D0
         grad_pes(:,fii:lii) = 0.D0
+        !
+     END IF
+     !
+     IF ( lfcpopt ) THEN
+        !
+        IF ( my_image_id == root_image ) THEN
+           !
+           FORALL( image = fii:lii, .NOT.frozen(image) )
+              !
+              fcp_neb_ef(image) = 0.D0
+              !
+           END FORALL
+           !
+        ELSE
+           !
+           fcp_neb_ef(fii:lii) = 0.D0
+           !
+        END IF
         !
      END IF
      !
@@ -170,14 +184,13 @@ SUBROUTINE compute_scf( fii, lii, stat  )
   !
 1 CALL mp_barrier( world_comm )
   !
-  DEALLOCATE( tauold )
-  !
   IF ( nimage > 1 ) THEN
      !
      ! ... pes and grad_pes are communicated among "image" pools
      !
      CALL mp_sum( pes(fii:lii),        inter_image_comm )
      CALL mp_sum( grad_pes(:,fii:lii), inter_image_comm )
+     IF ( lfcpopt ) CALL mp_sum( fcp_neb_ef(fii:lii), inter_image_comm )
      CALL mp_sum( istat,               inter_image_comm )
      !
   END IF
@@ -281,7 +294,7 @@ SUBROUTINE compute_scf( fii, lii, stat  )
       !
       tau = RESHAPE( pos(:,image), SHAPE( tau ) ) / alat
       !
-      WRITE( stdout, '(/,5X,"coordinates at iteration ",I3,/)' ) istep
+      WRITE( stdout, '(/,5X,"coordinates at iteration ",I3,/)' ) istep_path
       !
       CALL output_tau( .FALSE., .FALSE. )
       !
@@ -289,56 +302,17 @@ SUBROUTINE compute_scf( fii, lii, stat  )
       !
       CALL start_clock('PWSCF')
       CALL setup ()
+      !
+      IF ( lfcpopt ) THEN
+         nelec = fcp_neb_nelec(image)
+         tot_charge = SUM( zv(ityp(1:nat)) ) - nelec
+      ENDIF
+      !
       CALL init_run()
       !
-      IF ( ionode ) THEN
-         !
-         ! ... the file containing old positions is opened
-         ! ... ( needed for extrapolation )
-         !
-         CALL seqopn( iunupdate, 'update', 'FORMATTED', file_exists )
-         !
-         IF ( file_exists ) THEN
-            !
-            READ( UNIT = iunupdate, FMT = * ) history
-            READ( UNIT = iunupdate, FMT = * ) tauold
-            !
-         ELSE
-            !
-            history = 0
-            tauold  = 0.D0
-            !
-            WRITE( UNIT = iunupdate, FMT = * ) history
-            WRITE( UNIT = iunupdate, FMT = * ) tauold
-            !
-         END IF
-         !
-         CLOSE( UNIT = iunupdate, STATUS = 'KEEP' )
-         !
-      END IF
+      ! ... charge density and wavefunction extrapolation
       !
-      CALL mp_bcast( history, ionode_id, intra_image_comm )
-      CALL mp_bcast( tauold,  ionode_id, intra_image_comm )
-      !
-      IF ( history > 0 ) THEN
-         !
-         ! ... potential and wavefunctions are extrapolated only if
-         ! ... we are starting a new self-consistency ( scf on the
-         ! ... previous image was achieved )
-         !
-         IF ( pot_order > 0 ) THEN
-            !
-            ! ... structure factors of the old positions are computed
-            ! ... (needed for the old atomic charge)
-            !
-            CALL struc_fact( nat, tauold(:,:,1), nsp, ityp, ngm, g, bg, &
-                             dfftp%nr1, dfftp%nr2, dfftp%nr3, strf, eigts1, eigts2, eigts3 )
-            !
-         END IF
-         !
-         CALL update_pot()
-         !
-      END IF
+      CALL update_neb ()
       !
       ! ... self-consistency loop
       !
@@ -377,29 +351,11 @@ SUBROUTINE compute_scf( fii, lii, stat  )
       !
       grad_pes(:,image) = - RESHAPE( force, (/ dim1 /) ) / e2
       !
-      IF ( ionode ) THEN
-         !
-         ! ... save the previous two steps
-         ! ... ( a total of three ionic steps is saved )
-         !
-         tauold(:,:,3) = tauold(:,:,2)
-         tauold(:,:,2) = tauold(:,:,1)
-         tauold(:,:,1) = tau(:,:)
-         !
-         history = MIN( 3, ( history + 1 ) )
-         !
-         CALL seqopn( iunupdate, 'update', 'FORMATTED', file_exists )
-         !
-         WRITE( UNIT = iunupdate, FMT = * ) history
-         WRITE( UNIT = iunupdate, FMT = * ) tauold
-         !
-         CLOSE( UNIT = iunupdate, STATUS = 'KEEP' )
-         !
-      END IF
-      !
       ethr = diago_thr_init
       !
       CALL close_files(.FALSE.)
+      !
+      IF ( lfcpopt ) fcp_neb_ef(image) = ef
       !
       RETURN
       !

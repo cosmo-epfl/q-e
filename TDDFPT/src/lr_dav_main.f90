@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2004-2013 Quantum ESPRESSO group
+! Copyright (C) 2001-2015 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -20,13 +20,13 @@ PROGRAM lr_dav_main
   USE lr_variables,          ONLY : restart, restart_step,&
        evc1,n_ipol, d0psi, &
        no_hxc, nbnd_total, &
-       revc0, lr_io_level, code,davidson
+       revc0, lr_io_level, code1,davidson
   USE io_files,              ONLY : nd_nmbr
   USE global_version,        ONLY : version_number
   USE ions_base,             ONLY : tau,nat,atm,ityp
-  USE environment,           ONLY: environment_start
-  USE mp_global,             ONLY : nimage, mp_startup, init_index_over_band, inter_bgrp_comm
-
+  USE environment,           ONLY : environment_start
+  USE mp_global,             ONLY : nimage, mp_startup, set_bgrp_indices, &
+                                    ibnd_start, ibnd_end
   USE wvfct,                 ONLY : nbnd
   USE wavefunctions_module,  ONLY : psic
   USE control_flags,         ONLY : tddfpt, do_makov_payne
@@ -54,7 +54,7 @@ PROGRAM lr_dav_main
 #endif
   tddfpt=.TRUE. !Let the phonon routines know that they are doing tddfpt.
   davidson=.true. ! To tell the code that we are using davidson method
-  CALL environment_start ( code )
+  CALL environment_start ( code1 )
   CALL start_clock('lr_dav_main')
 
   !   Reading input file and PWSCF xml, some initialisation
@@ -78,7 +78,7 @@ PROGRAM lr_dav_main
   !   Read in ground state wavefunctions
   CALL lr_read_wf()
   !
-  CALL init_index_over_band(inter_bgrp_comm,nbnd)
+  CALL set_bgrp_indices(nbnd,ibnd_start,ibnd_end)
 
   !   Set up initial response orbitals
   CALL lr_solve_e()
@@ -155,9 +155,15 @@ CONTAINS
     !
     WRITE( stdout, '(/5x,"----------------------------------------")' )
     WRITE( stdout, '(/5x,"Welcome using turbo-davidson. For this moment you can report bugs to",/5x, &
-                    & "Xiaochuan Ge: xiaochuan.ge@sissa.it",/5x, &
-                    & "We appreciate a lot your help to make us improve.")' )
-    WRITE( stdout, '(/5x,"----------------------------------------",/)' )
+                    & "Xiaochuan Ge: xge@bnl.gov",/5x, &
+                    & "We appreciate a lot your help to make us improve.",/)' )
+
+    WRITE( stdout, '(/5x,"For the publication using this code, we appreciate if you could cite this article:")')
+    WRITE( stdout, '(/15x,"*****************************************")')
+    WRITE( stdout, '(/15x,"*  Comput. Phys. Commun. 185(2014)2080  *")')
+    WRITE( stdout, '(/15x,"*****************************************")')
+    WRITE( stdout, '(/5x,"----------------------------------------",/)' )   
+ 
     IF(okvan) WRITE( stdout, '(/5x,"Ultrasoft (Vanderbilt) Pseudopotentials")' )
     
     IF (do_comp_mt) THEN

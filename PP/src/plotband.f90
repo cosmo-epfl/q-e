@@ -16,6 +16,10 @@ PROGRAM plotband
   !   e.g. 0,0,0, can appear more than once but not in sequence)
   ! If these rules are violated, unpredictable results may follow
 
+  !!!
+  USE parser
+  USE kinds, ONLY : DP
+  !!!
   IMPLICIT NONE
   INTEGER, PARAMETER :: stdout=6
   real, ALLOCATABLE :: e(:,:), k(:,:), e_in(:), kx(:)
@@ -45,6 +49,13 @@ PROGRAM plotband
   LOGICAL :: exist_rap
   LOGICAL, ALLOCATABLE :: todo(:,:)
   CHARACTER(LEN=6), EXTERNAL :: int_to_char
+  !!!
+  LOGICAL :: exist_proj
+  CHARACTER(len=256) :: filename2, line, field
+  INTEGER :: nat, ntyp, atwfclst(99), natomwfc, nprojwfc, nwfc, idum
+  REAL(DP) :: proj, fdum
+  REAL(DP), ALLOCATABLE :: sumproj(:,:), p_rap(:,:)
+  !!!
 
 
   CALL get_file ( filename )
@@ -54,16 +65,18 @@ PROGRAM plotband
   IF (nks <= 0 .or. nbnd <= 0 .or. ios /= 0) THEN
      STOP 'Error reading file header'
   ELSE
-     PRINT '("Reading ",i4," bands at ",i6," k-points")', nbnd, nks
+     WRITE(*,'("Reading ",i4," bands at ",i6," k-points")') nbnd, nks
   ENDIF
 
   filename1=trim(filename)//".rap"
+  !!! replace with inquire statement?
   exist_rap=.true.
   OPEN(unit=21,file=filename1,form='formatted',status='old',err=100,iostat=ios)
 
 100 IF (ios /= 0) THEN
      exist_rap=.false.
   ENDIF
+  !!!
   IF (exist_rap) THEN
      READ (21, plot_rap, iostat=ios)
      IF (nks_rap/=nks.or.nbnd_rap/=nbnd.or.ios/=0) THEN
@@ -84,6 +97,39 @@ PROGRAM plotband
      ALLOCATE(todo(nbnd,2))
      ALLOCATE (is_in_range_rap(nbnd))
   ENDIF
+  !!!
+  filename2=trim(filename)//".proj"
+  exist_proj=.false.
+  INQUIRE(file=filename2,exist=exist_proj)
+  IF (exist_proj) THEN
+     OPEN(UNIT=22, FILE=filename2, FORM='formatted', STATUS='old', IOSTAT=ios)
+     IF (ios/=0) STOP 'Error opening projection file '
+     READ (22, *, ERR=22, IOSTAT=ios) ! empty line
+     READ (22, '(8i8)', ERR=22, IOSTAT=ios) idum, idum, idum, idum, idum, &
+          idum, nat, ntyp ! FFT grid (ignored), nat, ntyp
+     READ (22, '(i6,6f12.8)', ERR=22, IOSTAT=ios) idum, fdum, fdum, fdum, fdum, &
+        fdum, fdum ! ibrav, celldm(1-6)
+     IF (idum == 0) THEN ! read and discard the three cell vectors
+        READ (22, *, ERR=22, IOSTAT=ios)
+        READ (22, *, ERR=22, IOSTAT=ios)
+        READ (22, *, ERR=22, IOSTAT=ios)
+     ENDIF
+     DO i=1,1+nat+ntyp
+        READ(22, *, ERR=22, IOSTAT=ios) ! discard atomic positions
+     ENDDO
+     READ (22, '(3i8)',ERR=22, IOSTAT=ios) natomwfc, nks_rap, nbnd_rap
+     READ (22, *, ERR=22, IOSTAT=ios) ! discard another line
+
+     IF (nks_rap/=nks.or.nbnd_rap/=nbnd.or.ios/=0) THEN
+        WRITE(6,'("file with projections not compatible with bands")')
+        exist_proj=.false.
+     ELSE
+        ALLOCATE( sumproj(nbnd,nks) )
+        ALLOCATE( p_rap(nbnd,nks) )
+     ENDIF
+  ENDIF
+  !!!
+
 
   high_symmetry=.false.
 
@@ -109,6 +155,36 @@ PROGRAM plotband
   ENDDO
   CLOSE(unit=1)
   IF (exist_rap) CLOSE(unit=21)
+
+  !!!
+  ! First read the list of atomic wavefunctions from the input,
+  ! then read the entire projection file and sum up the projections
+  ! onto the selected wavefunctions.
+  !!!
+  IF (exist_proj) THEN
+     atwfclst(:) = -1
+     WRITE(*,'("List of atomic wavefunctions: ")', advance="NO")
+     READ (5,'(A)') line
+     CALL field_count( nprojwfc, line )
+     DO nwfc = 1,nprojwfc
+        CALL get_field(nwfc, field, line)
+        READ(field,*) atwfclst(nwfc)
+     ENDDO
+
+     sumproj(:,:) = 0.D0
+     DO nwfc = 1, natomwfc
+        READ(22, *, ERR=23, IOSTAT=ios)
+        DO n=1,nks
+           DO ibnd=1,nbnd
+              READ(22, '(2i8,f20.10)', ERR=23, IOSTAT=ios) idum,idum,proj
+              IF ( ANY( atwfclst(:) == nwfc ) ) sumproj(ibnd,n) = sumproj(ibnd,n) + proj
+           ENDDO
+        ENDDO
+     ENDDO
+     CLOSE(22)
+  ENDIF
+  !!!
+
 !
 !  Now find the high symmetry points in addition to those already identified
 !  in the representation file
@@ -170,7 +246,7 @@ PROGRAM plotband
         emax = max(emax, e(i,n))
      ENDDO
   ENDDO
-  PRINT '("Range:",2f10.4,"eV  Emin, Emax > ",$)', emin, emax
+  WRITE(*,'("Range:",2f10.4,"eV  Emin, Emax > ")', advance="NO") emin, emax
   READ(5,*) emin, emax
 !
 !  Since the minimum and miximum energies are given in input we can
@@ -230,10 +306,10 @@ PROGRAM plotband
      ENDIF
   ENDDO
   !
-  PRINT '("output file (xmgr) > ",$)'
+  WRITE(*,'("output file (xmgr) > ")', advance="NO")
   READ(5,'(a)', end=25, err=25)  filename
   IF (filename == ' ' ) THEN
-     PRINT '("skipping ...")'
+     WRITE(*,'("skipping ...")')
      GOTO 25
   ENDIF
   IF (.NOT.exist_rap) THEN
@@ -291,12 +367,24 @@ PROGRAM plotband
            ! draw bands
            DO i=1,nbnd
               IF (is_in_range(i)) THEN
-                 IF ( mod(i,2) /= 0) THEN
-                    WRITE (2,'(2f10.4)') (kx(n), e(i,n),n=point(ilines),&
-                                                          point(ilines+1))
+                 !!!
+                 IF (exist_proj) THEN
+                    IF ( mod(i,2) /= 0) THEN
+                       WRITE (2,'(3f10.4)') (kx(n), e(i,n), sumproj(i,n), &
+                          n=point(ilines),point(ilines+1))
+                    ELSE
+                       WRITE (2,'(3f10.4)') (kx(n), e(i,n), sumproj(i,n), &
+                          n=point(ilines+1),point(ilines),-1)
+                    ENDIF
                  ELSE
-                    WRITE (2,'(2f10.4)') (kx(n), e(i,n),n=point(ilines+1), &
+                 !!!
+                    IF ( mod(i,2) /= 0) THEN
+                       WRITE (2,'(2f10.4)') (kx(n), e(i,n),n=point(ilines),&
+                                                          point(ilines+1))
+                    ELSE
+                       WRITE (2,'(2f10.4)') (kx(n), e(i,n),n=point(ilines+1), &
                                                           point(ilines),-1 )
+                    ENDIF
                  ENDIF
               ENDIF
            ENDDO
@@ -323,6 +411,9 @@ PROGRAM plotband
                  IF (rap(i,n)==irap) THEN
                     nbnd_rapk(n) = nbnd_rapk(n) + 1
                     e_rap(nbnd_rapk(n),n)=e(i,n)
+                    !!!
+                    IF (exist_proj) p_rap(nbnd_rapk(n),n)=sumproj(i,n)
+                    !!!
                  ENDIF
               ENDDO
            ENDDO
@@ -336,6 +427,9 @@ PROGRAM plotband
                  IF (abs(e_rap(i,point(ilines)+1)-e(j,point(ilines)))<mine &
                                                         .and. todo(j,1)) THEN
                     e_rap(i,point(ilines))=e(j,point(ilines))
+                    !!!
+                    IF (exist_proj) p_rap(i,point(ilines))=sumproj(j,point(ilines))
+                    !!!
                     mine=abs( e_rap(i,point(ilines)+1)-e(j,point(ilines)))
                     jnow=j
                  ENDIF
@@ -348,6 +442,9 @@ PROGRAM plotband
                  IF (abs(e_rap(i,point(ilines+1)-1)- &
                           e(j,point(ilines+1)))<mine .and. todo(j,2)) THEN
                     e_rap(i,point(ilines+1))=e(j,point(ilines+1))
+                    !!!
+                    IF (exist_proj) p_rap(i,point(ilines+1))=sumproj(j,point(ilines+1))
+                    !!!
                     mine=abs(e_rap(i,point(ilines+1)-1)-e(j,point(ilines+1)) )
                     jnow=j
                  ENDIF
@@ -361,12 +458,24 @@ PROGRAM plotband
            ENDDO
            DO i=1,minval(nbnd_rapk)
               IF (is_in_range_rap(i)) THEN
-                 IF ( mod(i,2) /= 0) THEN
-                    WRITE (2,'(2f10.4)') (kx(n), e_rap(i,n), &
-                                        n=point(ilines),point(ilines+1))
+                 !!!
+                 IF (exist_proj) THEN
+                    IF ( mod(i,2) /= 0) THEN
+                       WRITE (2,'(3f10.4)') (kx(n), e_rap(i,n), p_rap(i,n), &
+                          n=point(ilines),point(ilines+1))
+                    ELSE
+                       WRITE (2,'(3f10.4)') (kx(n), e_rap(i,n), p_rap(i,n), &
+                          n=point(ilines+1),point(ilines),-1)
+                    ENDIF
                  ELSE
-                    WRITE (2,'(2f10.4)') (kx(n), e_rap(i,n), &
-                                       n=point(ilines+1),point(ilines),-1)
+                 !!!
+                    IF ( mod(i,2) /= 0) THEN
+                       WRITE (2,'(2f10.4)') (kx(n), e_rap(i,n), &
+                                           n=point(ilines),point(ilines+1))
+                    ELSE
+                       WRITE (2,'(2f10.4)') (kx(n), e_rap(i,n), &
+                                          n=point(ilines+1),point(ilines),-1)
+                    ENDIF
                  ENDIF
               ENDIF
            ENDDO
@@ -378,7 +487,7 @@ PROGRAM plotband
         ENDDO
      ENDDO
   ENDIF
-  PRINT '("bands in xmgr format written to file ",a)', filename
+  WRITE(*,'("bands in xmgr format written to file ",a)') filename
   !
 25 CONTINUE
   IF (exist_rap) THEN
@@ -389,17 +498,21 @@ PROGRAM plotband
      DEALLOCATE(todo)
      DEALLOCATE(is_in_range_rap)
   ENDIF
-  PRINT '("output file (ps) > ",$)'
+  IF (exist_proj) THEN
+     DEALLOCATE(sumproj)
+     DEALLOCATE(p_rap)
+  ENDIF
+  WRITE(*,'("output file (ps) > ")', advance="NO")
   READ(5,'(a)',end=30,err=30)  filename
   IF (filename == ' ' ) THEN
-     PRINT '("stopping ...")'
+     WRITE(*,'("stopping ...")')
      GOTO 30
   ENDIF
   OPEN (unit=1,file=TRIM(filename),form='formatted',status='unknown',&
        iostat=ios)
-  PRINT '("Efermi > ",$)'
+  WRITE(*,'("Efermi > ")', advance="NO")
   READ(5,*) Ef
-  PRINT '("deltaE, reference E (for tics) ",$)'
+  WRITE(*,'("deltaE, reference E (for tics) ")', advance="NO")
   READ(5,*) deltaE, eref
   !
   WRITE (1,'(a)') '%! PS-Adobe-1.0'
@@ -492,11 +605,15 @@ PROGRAM plotband
   WRITE (1,'(a)') '%%Page'
   WRITE (1,*) 'showpage'
   CLOSE (unit=1)
-  PRINT '("bands in PostScript format written to file ",a)', filename
+  WRITE(*,'("bands in PostScript format written to file ",a)') filename
 30 CONTINUE
 
   STOP
-20 PRINT '("Error reading k-point # ",i4)', n
+20 WRITE(*, '("Error reading k-point # ",i4)') n
+  STOP
+22 WRITE(*, '("Error reading projection file header")')
+  STOP
+23 WRITE(*, '("Error reading projections")')
   STOP
 
 CONTAINS

@@ -8,7 +8,7 @@ IFLAGS=-I../../include
 
 # location of needed modules
 MODFLAGS= $(MOD_FLAG)../../iotk/src $(MOD_FLAG)../../Modules \
-          $(MOD_FLAG)../../PW/src $(MOD_FLAG).
+          $(MOD_FLAG)../../PW/src $(MOD_FLAG)../../FFTXlib $(MOD_FLAG).
 
 #location of needed libraries
 LIBOBJS= ../../iotk/src/libiotk.a ../../flib/flib.a \
@@ -50,9 +50,10 @@ exchange_custom.o \
 mp_wave_parallel.o \
 wannier_bse.o\
 hpsi_pw4gww.o \
-cgsolve_all_gamma.o 
+cgsolve_all_gamma.o \
+realus.o 
 
-QEMODS = ../../Modules/libqemod.a
+QEMODS = ../../Modules/libqemod.a ../../FFTXlib/libqefft.a
 PWOBJS = ../../PW/src/libpw.a
 
 LIBMIN= ../minpack/minpacklib.a

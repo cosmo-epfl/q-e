@@ -1,7 +1,8 @@
 #!/bin/sh -x
 
-tempdir=$HOME/Downloads
-version=5.1
+#tempdir=$HOME/Downloads
+tempdir=/tmp
+version=5.3.0
 
 # make sure there is no locale setting creating unneeded differences.
 LC_ALL=C
@@ -11,7 +12,7 @@ mkdir $tempdir
 cd $tempdir
 /bin/rm -rf espresso/ espresso-$version
 # get the svn copy
-svn checkout http://qeforge.qe-forge.org/svn/q-e/trunk/espresso
+svn checkout http://qeforge.qe-forge.org/svn/q-e/tags/QE-5.3.0/espresso
 mv espresso/ espresso-$version/
 
 cd espresso-$version
@@ -31,6 +32,8 @@ rm archive/plumed-1.3-qe.tar.gz archive/PLUMED-latest.tar.gz
 
 # restore version.f90 
 mv version.f90 Modules/
+cp Modules/version.f90 Modules/version.f90.in
+chmod -x install/update_version
 
 # generate documentation - NOTA BENE:
 # in order to build the .html and .txt documentation in Doc, 
@@ -43,7 +46,6 @@ touch make.sys
 make doc
 
 # generate PWGUI
-
 make tar-gui PWGUI_VERSION=$version 
 tar -xzvf PWgui-$version.tgz
 /bin/rm PWgui-$version.tgz
@@ -61,6 +63,7 @@ tar -czvf espresso-$version.tar.gz espresso-$version/archive \
                                    espresso-$version/Doc \
                                    espresso-$version/environment_variables \
                                    espresso-$version/flib \
+                                   espresso-$version/FFTXlib \
                                    espresso-$version/Makefile \
                                    espresso-$version/include \
                                    espresso-$version/install \
@@ -84,4 +87,4 @@ tar -czvf ../GWW-$version.tar.gz      GWW
 #tar -czvf ../GIPAW-$version.tar.gz    GIPAW
 tar -czvf ../tddfpt-$version.tar.gz   TDDFPT
 tar -czvf ../atomic-$version.tar.gz   atomic
-
+tar -czvf ../test-suite-$version.tar.gz test-suite

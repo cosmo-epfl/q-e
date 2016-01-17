@@ -21,6 +21,59 @@ SUBROUTINE h_psi( lda, n, m, psi, hpsi )
   ! ... output:
   ! ...    hpsi  H*psi
   !
+  ! --- bgrp parallelization allowed 
+  !
+  USE kinds,            ONLY : DP
+  USE noncollin_module, ONLY : npol
+  USE funct,            ONLY : exx_is_active
+  USE mp_bands,         ONLY : tbgrp, set_bgrp_indices, inter_bgrp_comm
+  USE mp,               ONLY : mp_sum
+  !
+  IMPLICIT NONE
+  !
+  INTEGER, INTENT(IN)      :: lda, n, m
+  COMPLEX(DP), INTENT(IN)  :: psi(lda*npol,m) 
+  COMPLEX(DP), INTENT(OUT) :: hpsi(lda*npol,m)   
+  !
+  INTEGER     :: m_start, m_end
+  !
+  CALL start_clock( 'h_psi_bgrp' )
+
+! if exx_is_active bgrp parallelization is already used in exx routines that are part of Hpsi !
+! if m <= 1 there is nothing to distribute so we can avoid the communication step.
+!           moreover if a band by band diagonalization (such as ParO for instance) is used it may 
+!           be useful/necessary to operate on different vectors independently.
+  if (tbgrp .and. .not. exx_is_active() .and. m > 1) then
+      hpsi(:,:) = (0.d0,0.d0)
+      call set_bgrp_indices(m,m_start,m_end)
+      if (m_end >= m_start)  & !! at least one band in this band group
+          call h_psi_( lda, n, m_end-m_start+1, psi(1,m_start), hpsi(1,m_start) )
+      call mp_sum(hpsi,inter_bgrp_comm)
+   else ! no one else to communicate with 
+      call h_psi_( lda, n, m, psi, hpsi )
+   end if
+
+  CALL stop_clock( 'h_psi_bgrp' )
+  RETURN
+  !
+END SUBROUTINE h_psi
+!
+!----------------------------------------------------------------------------
+SUBROUTINE h_psi_( lda, n, m, psi, hpsi )
+  !----------------------------------------------------------------------------
+  !
+  ! ... This routine computes the product of the Hamiltonian
+  ! ... matrix with m wavefunctions contained in psi
+  !
+  ! ... input:
+  ! ...    lda   leading dimension of arrays psi, spsi, hpsi
+  ! ...    n     true dimension of psi, spsi, hpsi
+  ! ...    m     number of states psi
+  ! ...    psi
+  !
+  ! ... output:
+  ! ...    hpsi  H*psi
+  !
   USE kinds,    ONLY : DP
   USE bp,       ONLY : lelfield,l3dstring,gdir, efield, efield_cry
   USE becmod,   ONLY : bec_type, becp, calbec
@@ -33,8 +86,8 @@ SUBROUTINE h_psi( lda, n, m, psi, hpsi )
   USE funct,    ONLY : dft_is_meta
   USE control_flags,    ONLY : gamma_only
   USE noncollin_module, ONLY: npol, noncolin
-  USE realus,   ONLY : real_space, fft_orbital_gamma, initialisation_level, &
-                       bfft_orbital_gamma, calbec_rs_gamma, &
+  USE realus,   ONLY : real_space, invfft_orbital_gamma, initialisation_level, &
+                       fwfft_orbital_gamma, calbec_rs_gamma, &
                        add_vuspsir_gamma, v_loc_psir
   USE fft_base, ONLY : dffts
   USE exx,      ONLY : vexx
@@ -94,17 +147,17 @@ SUBROUTINE h_psi( lda, n, m, psi, hpsi )
         ENDIF
         DO ibnd = 1, m, incr
            ! ... transform psi to real space, saved in temporary memory
-           CALL fft_orbital_gamma(psi,ibnd,m,.true.) 
+           CALL invfft_orbital_gamma(psi,ibnd,m,.true.) 
            ! ... becp%r = < beta|psi> on psi in real space
            CALL calbec_rs_gamma(ibnd,m,becp%r) 
            ! ... psi is now replaced by hpsi ??? WHAT FOR ???
-           CALL fft_orbital_gamma(hpsi,ibnd,m)
+           CALL invfft_orbital_gamma(hpsi,ibnd,m)
            ! ... hpsi -> hpsi + psi*vrs  (psi read from temporary memory)
            CALL v_loc_psir(ibnd,m) 
            ! ... hpsi -> hpsi + vusp
            CALL  add_vuspsir_gamma(ibnd,m)
            ! ... transform back hpsi, clear psi in temporary memory
-           CALL bfft_orbital_gamma(hpsi,ibnd,m,.true.) 
+           CALL fwfft_orbital_gamma(hpsi,ibnd,m,.true.) 
         END DO
         !
      ELSE
@@ -159,4 +212,4 @@ SUBROUTINE h_psi( lda, n, m, psi, hpsi )
   !
   RETURN
   !
-END SUBROUTINE h_psi
+END SUBROUTINE h_psi_

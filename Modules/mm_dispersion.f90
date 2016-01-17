@@ -15,6 +15,7 @@ MODULE london_module
   ! [ S. Grimme, J. Comp. Chem., 27, 1787 (2006) ].
   !
   USE kinds ,           ONLY : DP
+  USE parameters ,      ONLY : nsx
   !
   IMPLICIT NONE
   !
@@ -35,10 +36,11 @@ MODULE london_module
   ! r     ( 3 , mxr )     : ordered distance vectors
   ! dist2 ( mxr )         : ordered distances
   !
-  REAL ( DP ) , PUBLIC :: scal6 , lon_rcut
+  REAL ( DP ) , PUBLIC :: scal6=0._dp , lon_rcut=0._dp , in_C6 ( nsx )
   !
   ! scal6    : global scaling factor
   ! lon_rcut : public cut-off radius
+  ! in_C6 ( ntyp ) : input (user) specified atomic C6 coefficients
   !
   INTEGER , PRIVATE :: mxr
   !
@@ -204,7 +206,11 @@ MODULE london_module
            !
            i = atomic_number ( atom_label ( ilab ) )
            IF ( i > 0 .AND. i < 87 ) THEN
-              C6_i  ( ilab )  = vdw_coeffs(1,i)
+              IF ( in_C6 (ilab) > 0.0_DP ) THEN
+                 C6_i  ( ilab )  = in_C6 (ilab)
+              ELSE
+                 C6_i  ( ilab )  = vdw_coeffs(1,i)
+              END IF
               R_vdw ( ilab )  = vdw_coeffs(2,i)
            ELSE
              CALL errore ( ' init_london ' ,&
@@ -378,11 +384,18 @@ MODULE london_module
           DO nr = 1 , nrm
             !
             dist  = alat * sqrt ( dist2 ( nr ) )
-            dist6 = dist ** 6
+            dist6 = beta*( dist / ( R_sum( ityp(atb), ityp(ata) ) ) - 1.0_dp )
             !
-            f_damp = 1.d0 / ( 1.d0 + &
-            exp ( -beta * ( dist / ( R_sum ( ityp (atb) , ityp (ata) ) ) - 1 )))
+            ! dist6 is used here as temporary variable to avoid computing
+            ! e^-x for too large x (for x=40, e^-x=4*10^-18)
             !
+            IF ( dist6 < 40.0_dp ) THEN
+               f_damp = 1.0_dp / ( 1.d0 + exp ( -dist6 ) )
+            ELSE
+               f_damp = 1.0_dp
+            END IF
+            !
+            dist6 = dist**6
             energy_london = energy_london - &
                   ( C6_ij ( ityp ( atb ) , ityp ( ata ) ) / dist6 ) * &
                   f_damp

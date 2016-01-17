@@ -10,18 +10,19 @@
 SUBROUTINE cg_readin()
   !-----------------------------------------------------------------------
   !
-  USE ions_base, ONLY : nat, amass
-  USE pwcom
+  USE ions_base, ONLY: nat, amass
+  USE fft_base,  ONLY: dffts
+  USE gvecs,     ONLY: doublegrid
+  USE klist,     ONLY: nks
+  USE control_flags, ONLY: gamma_only, llondon
+  USE uspp,      ONLY: okvan
+  USE io_files,  ONLY: tmp_dir, prefix
+  USE io_global, ONLY: ionode, ionode_id
+  USE noncollin_module, ONLY: noncolin
+  USE mp_bands,  ONLY: nbgrp, ntask_groups
+  USE mp,        ONLY: mp_bcast
+  USE mp_world,  ONLY: world_comm
   USE cgcom
-  USE fft_base,      ONLY : dffts
-  USE control_flags, ONLY : gamma_only
-  USE uspp,          ONLY : okvan
-  USE io_files,  ONLY : tmp_dir, prefix
-  USE io_global, ONLY : ionode, ionode_id
-  USE noncollin_module, ONLY : noncolin
-  USE mp_bands,  ONLY : nbgrp, ntask_groups
-  USE mp,        ONLY : mp_bcast
-  USE mp_world,  ONLY : world_comm
   !
   IMPLICIT NONE
   !
@@ -35,7 +36,7 @@ SUBROUTINE cg_readin()
   !
   CALL start_clock('cg_readin')
   !
-  CALL get_env( 'ESPRESSO_TMPDIR', outdir )
+  CALL get_environment_variable( 'ESPRESSO_TMPDIR', outdir )
   IF ( trim( outdir ) == ' ' ) outdir = './'
   prefix = 'pwscf'
   fildyn = 'matdyn'
@@ -92,6 +93,8 @@ SUBROUTINE cg_readin()
   !
   IF (.not. gamma_only) CALL errore('cg_readin', &
       'need pw.x data file produced using Gamma tricks',1)
+  IF ( llondon ) CALL errore('cg_readin', &
+      'phonons with DFT-D not implemented',1)
   !
   !   Task groups not used. 
   !
@@ -136,12 +139,11 @@ SUBROUTINE cg_readmodes(iunit)
   !
   USE ions_base, ONLY : nat
   USE kinds,     ONLY : DP
-  USE pwcom
   USE symm_base, ONLY : nsym, s, irt
-  USE cgcom
   USE io_global, ONLY : ionode, ionode_id
   USE mp,        ONLY : mp_bcast
   USE mp_world,  ONLY : world_comm
+  USE cgcom
   !
   IMPLICIT NONE
   !

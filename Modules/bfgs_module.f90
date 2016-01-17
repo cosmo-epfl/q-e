@@ -44,7 +44,7 @@ MODULE bfgs_module
    !
    USE kinds,     ONLY : DP
    USE io_files,  ONLY : iunbfgs, prefix
-   USE constants, ONLY : eps16
+   USE constants, ONLY : eps8, eps16
    USE cell_base, ONLY : iforceh
    !
    USE basic_algebra_routines
@@ -123,7 +123,7 @@ CONTAINS
    !------------------------------------------------------------------------
    SUBROUTINE bfgs( pos_in, h, energy, grad_in, fcell, fixion, scratch, stdout,&
                  energy_thr, grad_thr, cell_thr, energy_error, grad_error,     &
-                 cell_error, istep, nstep, step_accepted, stop_bfgs, lmovecell )
+                 cell_error, lmovecell, step_accepted, stop_bfgs, istep )
       !------------------------------------------------------------------------
       !
       ! ... list of input/output arguments :
@@ -141,7 +141,6 @@ CONTAINS
       !  grad_error     : the largest component of
       !                         | grad(V(x_i)) - grad(V(x_i-1)) |
       !  cell_error     : the largest component of: omega*(stress-press*I)
-      !  nstep          : the maximun nuber of scf-steps
       !  step_accepted  : .TRUE. if a new BFGS step is done
       !  stop_bfgs      : .TRUE. if BFGS convergence has been achieved
       !
@@ -156,11 +155,10 @@ CONTAINS
       CHARACTER(LEN=*), INTENT(IN)    :: scratch
       INTEGER,          INTENT(IN)    :: stdout
       REAL(DP),         INTENT(IN)    :: energy_thr, grad_thr, cell_thr
-      INTEGER,          INTENT(OUT)   :: istep
-      INTEGER,          INTENT(IN)    :: nstep
+      LOGICAL,          INTENT(IN)    :: lmovecell
       REAL(DP),         INTENT(OUT)   :: energy_error, grad_error, cell_error
       LOGICAL,          INTENT(OUT)   :: step_accepted, stop_bfgs
-      LOGICAL,          INTENT(IN)    :: lmovecell
+      INTEGER,          INTENT(OUT)   :: istep
       !
       INTEGER  :: n, i, j, k, nat
       LOGICAL  :: lwolfe
@@ -300,7 +298,7 @@ CONTAINS
               & FMT = '(5X,"new trust radius",T30,"= ",F18.10," bohr")' ) &
               trust_radius
          !
-         ! ... values from the last succeseful bfgs step are restored
+         ! ... values from the last successful bfgs step are restored
          !
          pos(:)  = pos_p(:)
          energy  = energy_p
@@ -428,7 +426,7 @@ CONTAINS
       !
       pos(:) = pos(:) + trust_radius * step(:)
       !
-1000  stop_bfgs = conv_bfgs .OR. ( scf_iter >= nstep ) 
+1000  stop_bfgs = conv_bfgs
       ! ... input ions+cell variables
       IF ( lmovecell ) FORALL( i=1:3, j=1:3) h(i,j) = pos( n-9 + j+3*(i-1) )
       pos_in = pos(1:n-9)
@@ -551,7 +549,7 @@ CONTAINS
    !------------------------------------------------------------------------
    SUBROUTINE reset_bfgs( n )
       !------------------------------------------------------------------------
-      ! ... inv_hess in re-initalized to the initial guess 
+      ! ... inv_hess in re-initialized to the initial guess 
       ! ... defined as the inverse metric 
       !
       INTEGER, INTENT(IN) :: n
@@ -801,7 +799,7 @@ CONTAINS
    !
    !------------------------------------------------------------------------
    SUBROUTINE compute_trust_radius( lwolfe, energy, grad, n, stdout )
-      !------------------------------------------------------------------------
+      !-----------------------------------------------------------------------
       !
       IMPLICIT NONE
       !
@@ -815,7 +813,14 @@ CONTAINS
       LOGICAL  :: ltest
       !
       ltest = ( energy - energy_p ) < w_1 * ( grad_p .dot. step_old ) * trust_radius_old
-      ltest = ltest .AND. ( nr_step_length_old > trust_radius_old )
+      !
+      ! The instruction below replaces the original instruction:
+      !    ltest = ltest .AND. ( nr_step_length_old > trust_radius_old )
+      ! which gives a random result if trust_radius was set equal to 
+      ! nr_step_length at previous step. I am not sure what the best 
+      ! action should be in that case, though (PG)
+      !
+      ltest = ltest .AND. ( nr_step_length_old > trust_radius_old + eps8 )
       !
       IF ( ltest ) THEN
          a = 1.5_DP

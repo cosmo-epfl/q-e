@@ -22,7 +22,8 @@ SUBROUTINE davcio_drho2 (drho, lrec, iunit, nrec, isw)
   USE mp_global, ONLY : intra_pool_comm, inter_pool_comm, me_pool, root_pool
   USE mp,        ONLY : mp_bcast, mp_barrier
   USE mp_world,  ONLY : world_comm
-  USE fft_base,  ONLY : dfftp, cgather_sym
+  USE fft_base,  ONLY : dfftp
+  USE scatter_mod,  ONLY : gather_grid
   !
   IMPLICIT NONE
   !
@@ -41,7 +42,7 @@ SUBROUTINE davcio_drho2 (drho, lrec, iunit, nrec, isw)
      !
      ! First task of the pool gathers and writes in the file
      !
-     CALL cgather_sym (drho, ddrho)
+     CALL gather_grid (dfftp, drho, ddrho)
      root = 0
      CALL mp_barrier( world_comm )
      IF ( ionode ) CALL davcio (ddrho, lrec, iunit, nrec, + 1)

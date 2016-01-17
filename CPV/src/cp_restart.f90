@@ -22,7 +22,7 @@ MODULE cp_restart
                           qexml_kpoint_dirname, qexml_read_header, qexml_read_status_cp, &
                           qexml_read_ions, qexml_read_spin, qexml_read_occ, &
                           qexml_read_bands_info, qexml_read_bands_cp, &
-                          fmt_version => qexml_default_version, qexml_save_history,qexml_wfc_filename, qexml_restart_dirname
+                          fmt_version => qexml_default_version, qexml_wfc_filename, qexml_restart_dirname
   USE xml_io_base,     ONLY  : write_wfc, read_wfc, write_rho_xml,read_print_counter, create_directory
   !
   USE kinds,     ONLY : DP
@@ -67,12 +67,11 @@ MODULE cp_restart
                                            nwordwfc, tmp_dir, diropn
       USE mp_images,                ONLY : intra_image_comm, me_image, &
                                            nproc_image
-      USE mp_pools,                 ONLY : nproc_pool, intra_pool_comm
+      USE mp_pools,                 ONLY : nproc_pool, intra_pool_comm, root_pool, inter_pool_comm
       USE mp_bands,                 ONLY : me_bgrp, nproc_bgrp, &
                                            my_bgrp_id, intra_bgrp_comm, &
                                            inter_bgrp_comm, root_bgrp, &
                                            ntask_groups
-      USE mp_pots,                  ONLY : nproc_pot
       USE mp_diag,                  ONLY : nproc_ortho
       USE mp_world,                 ONLY : world_comm, nproc
       USE run_info,                 ONLY : title
@@ -402,8 +401,8 @@ MODULE cp_restart
 !-------------------------------------------------------------------------------
          !
          !
-         CALL qexml_write_para( kunit, nproc, nproc_pool, nproc_image, ntask_groups, &
-                          nproc_pot, nproc_bgrp, nproc_ortho )
+         CALL qexml_write_para( kunit, nproc, nproc_pool, nproc_image, &
+                                ntask_groups, nproc_bgrp, nproc_ortho )
          !
       END IF
       !
@@ -666,9 +665,9 @@ MODULE cp_restart
                ib = iupdwn_tot( iss_wfc )
                !
                CALL write_wfc( iunout, ik_eff, nk*nspin, kunit, iss, nspin,        &
-                               ctot( :, ib : ib + nbnd_tot - 1 ), ngw_g, gamma_only,&
-                               nbnd_tot, ig_l2g, ngw, filename, scalef, &
-                               ionode, root_bgrp, intra_bgrp_comm, inter_bgrp_comm, intra_pool_comm )
+                            ctot( :, ib : ib + nbnd_tot - 1 ), ngw_g, gamma_only,&
+                            nbnd_tot, ig_l2g, ngw, filename, scalef, &
+                            ionode, root_bgrp, intra_bgrp_comm, inter_bgrp_comm, intra_pool_comm )
                !
             END IF
             !
@@ -876,7 +875,7 @@ MODULE cp_restart
       !
       call mp_barrier( world_comm )
       !
-      IF( .NOT. twfcollect ) THEN
+      IF( (.NOT. twfcollect) .AND. (my_bgrp_id == 0) ) THEN
          !
          tmp_dir_save = tmp_dir
          tmp_dir = TRIM( qexml_restart_dirname( tmp_dir, prefix, ndw ) ) // '/'
@@ -902,14 +901,6 @@ MODULE cp_restart
       DEALLOCATE( ftmp )
       DEALLOCATE( tau  )
       DEALLOCATE( ityp )
-      !
-      IF (ionode) CALL qexml_save_history( dirname, nfi, ierr )
-      !
-      CALL mp_bcast( ierr, ionode_id, intra_image_comm )
-      !
-      CALL errore( 'cp_writefile', &
-                   'cannot save history', ierr )
-      !
       !
       s1 = cclock() 
       !
@@ -1545,6 +1536,10 @@ MODULE cp_restart
                                  filename, scalef_, &
                                  ionode, root_bgrp, intra_bgrp_comm, &
                                  inter_bgrp_comm, intra_pool_comm, .TRUE. )
+
+                               !ionode, root_pool, intra_pool_comm, inter_pool_comm, intra_image_comm )
+                               !ionode, root_bgrp, intra_bgrp_comm, inter_bgrp_comm, intra_pool_comm )
+
                   !
                END IF
                !
@@ -1743,26 +1738,33 @@ MODULE cp_restart
       !
       IF( .NOT. exist_wfc ) THEN
          !
-         tmp_dir_save = tmp_dir
-         tmp_dir = TRIM( qexml_restart_dirname( tmp_dir, prefix, ndr ) ) // '/'
-         tmp_dir = TRIM( qexml_kpoint_dirname( tmp_dir, 1 ) ) // '/'
-         !
-         iunwfc = 10
-         nwordwfc = SIZE( c02 )
-         !
-         CALL diropn ( iunwfc, 'wfc', 2*nwordwfc, exst )
-  
-         IF ( exst ) THEN
-            CALL davcio ( c02, 2*nwordwfc, iunwfc, 1, -1 )  ! read wave funct
-            CALL davcio ( cm2, 2*nwordwfc, iunwfc, 2, -1 )  ! read wave funct
-            CLOSE( UNIT = iunwfc, STATUS = 'KEEP' )
-         ELSE
-            CLOSE( UNIT = iunwfc, STATUS = 'DELETE' )
-            CALL errore( ' readfile ' , ' no wave function found! ' , 1 )
+         IF( my_bgrp_id == 0 ) THEN
+            !
+            tmp_dir_save = tmp_dir
+            tmp_dir = TRIM( qexml_restart_dirname( tmp_dir, prefix, ndr ) ) // '/'
+            tmp_dir = TRIM( qexml_kpoint_dirname( tmp_dir, 1 ) ) // '/'
+            !
+            iunwfc = 10
+            nwordwfc = SIZE( c02 )
+            !
+            CALL diropn ( iunwfc, 'wfc', 2*nwordwfc, exst )
+     
+            IF ( exst ) THEN
+               CALL davcio ( c02, 2*nwordwfc, iunwfc, 1, -1 )  ! read wave funct
+               CALL davcio ( cm2, 2*nwordwfc, iunwfc, 2, -1 )  ! read wave funct
+               CLOSE( UNIT = iunwfc, STATUS = 'KEEP' )
+            ELSE
+               CLOSE( UNIT = iunwfc, STATUS = 'DELETE' )
+               CALL errore( ' readfile ' , ' no wave function found! ' , 1 )
+            END IF
+
+            tmp_dir = tmp_dir_save
+            !
          END IF
 
-         tmp_dir = tmp_dir_save
-         !
+         CALL mp_bcast( c02, 0, inter_bgrp_comm )
+         CALL mp_bcast( cm2, 0, inter_bgrp_comm )
+
       END IF
       !
       s1 = cclock()

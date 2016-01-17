@@ -32,7 +32,8 @@ PROGRAM wfck2r
   USE noncollin_module, ONLY : npol, nspin_mag, noncolin
   USE cell_base, ONLY : tpiba2
   USE environment,ONLY : environment_start, environment_end
-  USE fft_base,  only : dffts, cgather_smooth
+  USE fft_base,  only : dffts
+  USE scatter_mod,  only : gather_grid
   USE fft_interfaces, ONLY : invfft
 
   !
@@ -55,7 +56,7 @@ PROGRAM wfck2r
   CALL environment_start ( 'WFCK2R' )
 
   prefix = 'pwscf'
-  CALL get_env( 'ESPRESSO_TMPDIR', outdir )
+  CALL get_environment_variable( 'ESPRESSO_TMPDIR', outdir )
   IF ( TRIM( outdir ) == ' ' ) outdir = './'
 
   IF ( npool > 1 ) CALL errore('bands','pools not implemented',npool)
@@ -139,7 +140,7 @@ PROGRAM wfck2r
 #if defined (__MPI)
         DO is = 1, nspin_mag
            !
-           CALL cgather_smooth( evc_r(:,is), dist_evc_r(:,is) )
+           CALL gather_grid( dffts, evc_r(:,is), dist_evc_r(:,is) )
            !
         END DO
 #else

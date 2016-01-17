@@ -27,7 +27,8 @@ subroutine solve_e
   USE klist,                 ONLY : lgauss, xk, wk
   USE gvect,                 ONLY : g
   USE gvecs,                 ONLY : doublegrid
-  USE fft_base,              ONLY : dfftp, dffts, tg_cgather
+  USE fft_base,              ONLY : dfftp, dffts
+  USE fft_parallel,          ONLY : tg_cgather
   USE lsda_mod,              ONLY : lsda, nspin, current_spin, isk
   USE spin_orb,              ONLY : domag
   USE wvfct,                 ONLY : nbnd, npw, npwx, igk, g2kin,  et
@@ -165,7 +166,7 @@ subroutine solve_e
   do kter = 1, niter_ph
 
 !     write(6,*) 'kter', kter
-     CALL flush_unit( stdout )
+     FLUSH( stdout )
      iter = kter + iter0
      ltaver = 0
      lintercall = 0
@@ -408,7 +409,7 @@ subroutine solve_e
      WRITE( stdout, "(5x,' thresh=',es10.3, ' alpha_mix = ',f6.3, &
           &      ' |ddv_scf|^2 = ',es10.3 )") thresh, alpha_mix (kter), dr2
      !
-     CALL flush_unit( stdout )
+     FLUSH( stdout )
      !
      ! rec_code: state of the calculation
      ! rec_code=-20 Electric Field

@@ -26,7 +26,7 @@
       use cell_base,            only: ainv, at, omega, alat
       use small_box,            only: small_box_set
       use smallbox_grid_dim,    only: smallbox_grid_init,smallbox_grid_info
-      USE grid_subroutines,     ONLY: realspace_grids_init, realspace_grids_info
+      USE grid_subroutines,     ONLY: realspace_grid_init, realspace_grids_info
       use ions_base,            only: nat
       USE recvec_subs,          ONLY: ggen
       USE gvect,                ONLY: mill_g, eigts1,eigts2,eigts3, gg, &
@@ -34,8 +34,8 @@
       use gvecs,                only: gcutms, gvecs_init
       use gvecw,                only: gkcut, gvecw_init, g2kin_init
       USE smallbox_subs,        ONLY: ggenb
-      USE fft_base,             ONLY: dfftp, dffts, dfftb
-      USE fft_scalar,           ONLY: cft_b_omp_init
+      USE fft_base,             ONLY: dfftp, dffts, dfftb, dfft3d
+      USE fft_smallbox,         ONLY: cft_b_omp_init
       USE stick_set,            ONLY: pstickset
       USE control_flags,        ONLY: gamma_only, smallmem
       USE electrons_module,     ONLY: bmeshset
@@ -93,11 +93,15 @@
         WRITE( stdout,'(3X,"ref_cell_a2 =",1X,3f14.8,3x,"ref_cell_b2 =",3f14.8)') ref_at(:,2)*ref_alat,ref_bg(:,2)/ref_alat
         WRITE( stdout,'(3X,"ref_cell_a3 =",1X,3f14.8,3x,"ref_cell_b3 =",3f14.8)') ref_at(:,3)*ref_alat,ref_bg(:,3)/ref_alat
         !
-        CALL realspace_grids_init( dfftp, dffts, ref_at, ref_bg, gcutm, gcutms)
+        CALL realspace_grid_init( dfftp, ref_at, ref_bg, gcutm )
+        CALL realspace_grid_init( dffts, ref_at, ref_bg, gcutms)
+        CALL realspace_grid_init( dfft3d, ref_at, ref_bg, gcutms)
         !
       ELSE
         !
-        CALL realspace_grids_init( dfftp, dffts, at, bg, gcutm, gcutms)
+        CALL realspace_grid_init( dfftp, at, bg, gcutm )
+        CALL realspace_grid_init( dffts, at, bg, gcutms)
+        CALL realspace_grid_init( dfft3d, at, bg, gcutms)
         !
       END IF
       !
@@ -134,7 +138,7 @@
 
       CALL pstickset( gamma_only, bg, gcutm, gkcut, gcutms, &
         dfftp, dffts, ngw_ , ngm_ , ngs_ , me_bgrp, root_bgrp, &
-        nproc_bgrp, intra_bgrp_comm, ntask_groups )
+        nproc_bgrp, intra_bgrp_comm, ntask_groups, ionode, stdout, dfft3d )
       !
       !
       ! ... Initialize reciprocal space local and global dimensions
@@ -206,7 +210,7 @@
          !
          CALL ggenb ( ecutrho, iverbosity )
          !
-#if defined __OPENMP && defined __FFTW 
+#if defined __OPENMP
          CALL cft_b_omp_init( dfftb%nr1, dfftb%nr2, dfftb%nr3 )
 #endif
       ELSE IF( okvan .OR. nlcc_any ) THEN
@@ -227,7 +231,7 @@
       !
       !   Flush stdout
       !
-      CALL flush_unit( stdout )
+      FLUSH( stdout )
       !
       CALL stop_clock( 'init_dim' )
       !
@@ -416,6 +420,10 @@
       CALL small_box_set( alat, omega, at, rat1, rat2, rat3, tprint = ( iverbosity > 0 ) )
       !
       call gcalb ( )
+      !
+      !   pass new cell parameters to plugins
+      !
+      CALL plugin_init_cell( )
       !
       return
     end subroutine newinit_x

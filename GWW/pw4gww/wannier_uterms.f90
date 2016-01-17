@@ -247,7 +247,7 @@
    write(stdout,*)'BG2', bg(1:3,2)
     write(stdout,*)'BG3', bg(1:3,3)
     if(bg(2,1)==0.d0 .and. bg(3,1)==0.d0 .and.bg(1,2)==0.d0 .and.bg(3,2)==0.d0 .and. bg(1,3)==0.d0 .and.bg(2,3)==0.d0 ) then
-       call flush_unit(stdout)
+       FLUSH(stdout)
        do ig=1,npw
           vg_q(ig)=0.d0
           if(ig==1 .and. gstart==2) then
@@ -259,7 +259,7 @@
           allocate(q2(-n_int_loc+1:n_int_loc))
           allocate(q3(-n_int_loc+1:n_int_loc))
           do ix=-n_int_loc+1,n_int_loc                                                        
-             q1(ix)=(0.5d0*(1.d0/dble(n_int_loc)*(dble(ix-1))+0.5d0/dble(n_int_loc))*bg(1,1)+g(1,ig))**2.d0                                             
+             q1(ix)=(0.5d0*(1.d0/dble(n_int_loc)*(dble(ix-1))+0.5d0/dble(n_int_loc))*bg(1,1)+g(1,ig))**2.d0 
           enddo
           do ix=-n_int_loc+1,n_int_loc
              q2(ix)=(0.5d0*(1.d0/dble(n_int_loc)*(dble(ix-1))+0.5d0/dble(n_int_loc))*bg(2,2)+g(2,ig))**2.d0

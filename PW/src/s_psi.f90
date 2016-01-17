@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2007 Quantum ESPRESSO group
+! Copyright (C) 2001-2015 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -26,14 +26,73 @@ SUBROUTINE s_psi( lda, n, m, psi, spsi )
   !
   ! ...    spsi  S*psi
   !
+  ! ... bgrp parallelization allowed
+  !
+  USE kinds,            ONLY : DP
+  USE noncollin_module, ONLY : npol
+  USE funct,            ONLY : exx_is_active
+  USE mp_bands,         ONLY : tbgrp, set_bgrp_indices, inter_bgrp_comm
+  USE mp,               ONLY : mp_sum
+  !
+  IMPLICIT NONE
+  !
+  INTEGER, INTENT(IN) :: lda, n, m
+  COMPLEX(DP), INTENT(IN) :: psi(lda*npol,m)
+  COMPLEX(DP), INTENT(OUT)::spsi(lda*npol,m)
+  !
+  INTEGER     :: m_start, m_end
+  !
+  CALL start_clock( 's_psi_bgrp' )
+
+! if exx_is_active bgrp parallelization is already used in exx routines that are part of Hpsi !
+! if m <= 1 there is nothing to distribute so we can avoid the communication step.
+!           moreover if a band by band diagonalization (such as ParO for instance) is used it may 
+!           be useful/necessary to operate on different vectors independently.
+  if (tbgrp .and. .not. exx_is_active() .and. m > 1) then
+      spsi(:,:) = (0.d0,0.d0)
+      call set_bgrp_indices(m,m_start,m_end)
+      if (m_end >= m_start)  & !! at least one band in this band group
+          call s_psi_( lda, n, m_end-m_start+1, psi(1,m_start), spsi(1,m_start) )
+      call mp_sum(spsi,inter_bgrp_comm)
+   else ! no one else to communicate with 
+      call s_psi_( lda, n, m, psi, spsi )
+   end if
+
+  CALL stop_clock( 's_psi_bgrp' )
+  RETURN
+
+END SUBROUTINE s_psi
+!
+!----------------------------------------------------------------------------
+SUBROUTINE s_psi_( lda, n, m, psi, spsi )
+  !----------------------------------------------------------------------------
+  !
+  ! ... This routine applies the S matrix to m wavefunctions psi
+  ! ... and puts the results in spsi.
+  ! ... Requires the products of psi with all beta functions
+  ! ... in array becp(nkb,m) (calculated in h_psi or by calbec)
+  !
+  ! ... input:
+  !
+  ! ...    lda   leading dimension of arrays psi, spsi
+  ! ...    n     true dimension of psi, spsi
+  ! ...    m     number of states psi
+  ! ...    psi
+  !
+  ! ... output:
+  !
+  ! ...    spsi  S*psi
+  !
   USE kinds,      ONLY : DP
-  USE uspp,       ONLY : vkb, nkb, qq, okvan
-  USE uspp_param, ONLY : upf, nh 
+  USE becmod,     ONLY : becp
+  USE uspp,       ONLY : vkb, nkb, okvan, qq, qq_so, indv_ijkb0
+  USE spin_orb,   ONLY : lspinorb
+  USE uspp_param, ONLY : upf, nh, nhm
   USE ions_base,  ONLY : nat, nsp, ityp
   USE control_flags,    ONLY: gamma_only 
   USE noncollin_module, ONLY: npol, noncolin
-  USE realus,     ONLY :  real_space, fft_orbital_gamma, initialisation_level,&
-                          bfft_orbital_gamma, calbec_rs_gamma, s_psir_gamma
+  USE realus,     ONLY :  real_space, invfft_orbital_gamma, initialisation_level,&
+                          fwfft_orbital_gamma, calbec_rs_gamma, s_psir_gamma
   !
   IMPLICIT NONE
   !
@@ -59,9 +118,9 @@ SUBROUTINE s_psi( lda, n, m, psi, spsi )
         !
         DO ibnd = 1, m, 2
            !   transform the orbital to real space
-           CALL  fft_orbital_gamma(psi,ibnd,m) 
+           CALL invfft_orbital_gamma(psi,ibnd,m) 
            CALL s_psir_gamma(ibnd,m)
-           CALL bfft_orbital_gamma(spsi,ibnd,m)
+           CALL fwfft_orbital_gamma(spsi,ibnd,m)
         END DO
         !
      ELSE
@@ -92,14 +151,13 @@ SUBROUTINE s_psi( lda, n, m, psi, spsi )
        ! 
        ! ... gamma version
        !
-       USE becmod, ONLY : bec_type, becp
        USE mp, ONLY: mp_get_comm_null, mp_circular_shift_left
        !
        IMPLICIT NONE  
        !
        ! ... here the local variables
        !
-       INTEGER :: ikb, jkb, ih, jh, na, nt, ijkb0, ibnd, ierr
+       INTEGER :: ikb, jkb, ih, jh, na, nt, ibnd, ierr
          ! counters
        INTEGER :: nproc, mype, m_loc, m_begin, ibnd_loc, icyc, icur_blk, m_max
          ! data distribution indexes
@@ -108,18 +166,22 @@ SUBROUTINE s_psi( lda, n, m, psi, spsi )
        REAL(DP), ALLOCATABLE :: ps(:,:)
          ! the product vkb and psi
        !
-       m_loc   = m
-       m_begin = 1
-       m_max   = m
-       nproc   = 1
-       mype    = 0
-       !
-       IF( becp%comm /= mp_get_comm_null() ) THEN
+       IF( becp%comm == mp_get_comm_null() ) THEN
+          nproc   = 1
+          mype    = 0
+          m_loc   = m
+          m_begin = 1
+          m_max   = m
+       ELSE
+          !
+          ! becp(l,i) = <beta_l|psi_i>, with vkb(n,l)=|beta_l>
+          ! in this case becp(l,i) are distributed (index i is)
+          !
           nproc   = becp%nproc
           mype    = becp%mype
           m_loc   = becp%nbnd_loc
           m_begin = becp%ibnd_begin
-          m_max   = SIZE(becp%r,2)
+          m_max   = SIZE( becp%r, 2 )
           IF( ( m_begin + m_loc - 1 ) > m ) m_loc = m - m_begin + 1
        END IF
        !
@@ -129,32 +191,36 @@ SUBROUTINE s_psi( lda, n, m, psi, spsi )
        !    
        ps(:,:) = 0.D0
        !
-       ijkb0 = 0
+       !   In becp=<vkb_i|psi_j> terms corresponding to atom na of type nt
+       !   run from index i=indv_ijkb0(na)+1 to i=indv_ijkb0(na)+nh(nt)
+       !
        DO nt = 1, nsp
           IF ( upf(nt)%tvanp ) THEN
              DO na = 1, nat
                 IF ( ityp(na) == nt ) THEN
-                   DO ibnd_loc = 1, m_loc
-                      DO jh = 1, nh(nt)
-                         jkb = ijkb0 + jh
-                         DO ih = 1, nh(nt)
-                            ikb = ijkb0 + ih
-                            ps(ikb,ibnd_loc) = ps(ikb,ibnd_loc) + &
-                                           qq(ih,jh,nt) * becp%r(jkb,ibnd_loc)
-                         END DO
-                      END DO
-                   END DO
-                   ijkb0 = ijkb0 + nh(nt)
+                   !
+                   ! Next operation computes ps(l',i)=\sum_m qq(l,m) becp(m',i)
+                   ! (l'=l+ijkb0, m'=m+ijkb0, indices run from 1 to nh(nt))
+                   !
+                   IF ( m_loc > 0 ) THEN
+                      CALL DGEMM('N', 'N', nh(nt), m_loc, nh(nt), 1.0_dp, &
+                                  qq(1,1,nt), nhm, becp%r(indv_ijkb0(na)+1,1),&
+                                  nkb, 0.0_dp, ps(indv_ijkb0(na)+1,1), nkb )
+                   END IF
                 END IF
-             END DO
-          ELSE
-             DO na = 1, nat
-                IF ( ityp(na) == nt ) ijkb0 = ijkb0 + nh(nt)
              END DO
           END IF
        END DO
        !
-       IF( becp%comm /= mp_get_comm_null() ) THEN
+       IF( becp%comm == mp_get_comm_null() ) THEN
+          IF ( m == 1 ) THEN
+             CALL DGEMV( 'N', 2 * n, nkb, 1.D0, vkb, &
+                  2 * lda, ps, 1, 1.D0, spsi, 1 )
+          ELSE
+             CALL DGEMM( 'N', 'N', 2 * n, m, nkb, 1.D0, vkb, &
+                  2 * lda, ps, nkb, 1.D0, spsi, 2 * lda )
+          END IF
+       ELSE
           !
           ! parallel block multiplication of vkb and ps
           !
@@ -181,16 +247,6 @@ SUBROUTINE s_psi( lda, n, m, psi, spsi )
 
           END DO
           !
-       ELSE IF ( m == 1 ) THEN
-          !
-          CALL DGEMV( 'N', 2 * n, nkb, 1.D0, vkb, &
-                      2 * lda, ps, 1, 1.D0, spsi, 1 )
-          !
-       ELSE
-          !
-          CALL DGEMM( 'N', 'N', 2 * n, m, nkb, 1.D0, vkb, &
-                      2 * lda, ps, nkb, 1.D0, spsi, 2 * lda )
-          !
        END IF
        !
        DEALLOCATE( ps ) 
@@ -205,16 +261,14 @@ SUBROUTINE s_psi( lda, n, m, psi, spsi )
        !
        ! ... k-points version
        !
-       USE becmod,  ONLY : becp
-       !
        IMPLICIT NONE
        !
        ! ... local variables
        !
-       INTEGER :: ikb, jkb, ih, jh, na, nt, ijkb0, ibnd, ierr
+       INTEGER :: ikb, jkb, ih, jh, na, nt, ibnd, ierr
          ! counters
-       COMPLEX(DP), ALLOCATABLE :: ps(:,:)
-         ! the product vkb and psi
+       COMPLEX(DP), ALLOCATABLE :: ps(:,:), qqc(:,:)
+         ! ps = product vkb and psi ; qqc = complex version of qq
        !
        ALLOCATE( ps( nkb, m ), STAT=ierr )    
        IF( ierr /= 0 ) &
@@ -222,28 +276,21 @@ SUBROUTINE s_psi( lda, n, m, psi, spsi )
        !
        ps(:,:) = ( 0.D0, 0.D0 )
        !
-       ijkb0 = 0
        DO nt = 1, nsp
           IF ( upf(nt)%tvanp ) THEN
+             ! qq is real:  copy it into a complex variable to perform
+             ! a zgemm - simple but sub-optimal solution
+             ALLOCATE( qqc(nh(nt),nh(nt)) )
+             qqc(:,:) = CMPLX ( qq(1:nh(nt),1:nh(nt),nt), 0.0_dp, KIND=dp )
              DO na = 1, nat
                 IF ( ityp(na) == nt ) THEN
-                   DO ibnd = 1, m
-                      DO jh = 1, nh(nt)
-                         jkb = ijkb0 + jh
-                         DO ih = 1, nh(nt)
-                            ikb = ijkb0 + ih
-                            ps(ikb,ibnd) = ps(ikb,ibnd) + &
-                                           qq(ih,jh,nt) * becp%k(jkb,ibnd)
-                         END DO
-                      END DO
-                   END DO
-                   ijkb0 = ijkb0 + nh(nt)
+                   CALL ZGEMM('N','N', nh(nt), m, nh(nt), (1.0_dp,0.0_dp), &
+                        qqc, nh(nt), becp%k(indv_ijkb0(na)+1,1), nkb, &
+                        (0.0_dp,0.0_dp), ps(indv_ijkb0(na)+1,1), nkb )
+                   !
                 END IF
              END DO
-          ELSE
-             DO na = 1, nat
-                IF ( ityp(na) == nt ) ijkb0 = ijkb0 + nh(nt)
-             END DO
+             DEALLOCATE (qqc)
           END IF
        END DO
        !
@@ -270,14 +317,13 @@ SUBROUTINE s_psi( lda, n, m, psi, spsi )
       SUBROUTINE s_psi_nc ( )
      !-----------------------------------------------------------------------
        !
-       USE uspp,   ONLY: qq_so
-       USE becmod, ONLY: bec_type, becp
-       USE spin_orb, ONLY: lspinorb
+       ! ... k-points noncolinear/spinorbit version
+       !
        IMPLICIT NONE
        !
        !    here the local variables
        !
-       INTEGER :: ikb, jkb, ih, jh, na, nt, ijkb0, ibnd, ipol, ierr
+       INTEGER :: ikb, jkb, ih, jh, na, nt, ibnd, ipol, ierr
        ! counters
        COMPLEX (DP), ALLOCATABLE :: ps (:,:,:)
        ! the product vkb and psi
@@ -287,41 +333,39 @@ SUBROUTINE s_psi( lda, n, m, psi, spsi )
           CALL errore( ' s_psi_nc ', ' cannot allocate memory (ps) ', ABS(ierr) )
        ps(:,:,:) = (0.D0,0.D0)
        !
-       ijkb0 = 0
-       do nt = 1, nsp
-          if ( upf(nt)%tvanp ) then
-             do na = 1, nat
-                if (ityp (na) == nt) then
-                   do ih = 1,nh(nt)
-                      ikb = ijkb0 + ih
-                      do ibnd = 1, m
-                         do jh = 1, nh (nt)
-                            jkb = ijkb0 + jh
-                            if (lspinorb) then
+       DO nt = 1, nsp
+          !
+          IF ( upf(nt)%tvanp ) THEN
+             !
+             DO na = 1, nat
+                IF ( ityp(na) == nt ) THEN
+                   DO ih = 1,nh(nt)
+                      ikb = indv_ijkb0(na) + ih
+                      DO jh = 1, nh (nt)
+                         jkb = indv_ijkb0(na) + jh
+                         IF ( .NOT. lspinorb ) THEN
+                            DO ipol=1,npol
+                               DO ibnd = 1, m
+                                  ps(ikb,ipol,ibnd) = ps(ikb,ipol,ibnd) + &
+                                       qq(ih,jh,nt)*becp%nc(jkb,ipol,ibnd)
+                               END DO
+                            END DO
+                         ELSE
+                            DO ibnd = 1, m
                                ps(ikb,1,ibnd)=ps(ikb,1,ibnd) + &
-                                 qq_so(ih,jh,1,nt)*becp%nc(jkb,1,ibnd)+ &
-                                 qq_so(ih,jh,2,nt)*becp%nc(jkb,2,ibnd)
+                                    qq_so(ih,jh,1,nt)*becp%nc(jkb,1,ibnd)+ &
+                                    qq_so(ih,jh,2,nt)*becp%nc(jkb,2,ibnd)
                                ps(ikb,2,ibnd)=ps(ikb,2,ibnd) + &
-                                 qq_so(ih,jh,3,nt)*becp%nc(jkb,1,ibnd)+ &
-                                 qq_so(ih,jh,4,nt)*becp%nc(jkb,2,ibnd)
-                            else
-                               do ipol=1,npol
-                                  ps(ikb,ipol,ibnd)=ps(ikb,ipol,ibnd) + &
-                                        qq(ih,jh,nt)*becp%nc(jkb,ipol,ibnd)
-                               enddo
-                            endif
-                         enddo
-                      enddo
-                   enddo
-                   ijkb0 = ijkb0 + nh (nt)
-                endif
-             enddo
-          else
-             do na = 1, nat
-                if (ityp (na) == nt) ijkb0 = ijkb0 + nh (nt)
-             enddo
-          endif
-       enddo
+                                    qq_so(ih,jh,3,nt)*becp%nc(jkb,1,ibnd)+ &
+                                    qq_so(ih,jh,4,nt)*becp%nc(jkb,2,ibnd)
+                            END DO
+                         END IF
+                      END DO
+                   END DO
+                END IF
+             END DO
+          END IF
+       END DO
 
        call ZGEMM ('N', 'N', n, m*npol, nkb, (1.d0, 0.d0) , vkb, &
           lda, ps, nkb, (1.d0, 0.d0) , spsi(1,1), lda)
@@ -332,4 +376,4 @@ SUBROUTINE s_psi( lda, n, m, psi, spsi )
 
     END SUBROUTINE s_psi_nc
 
-END SUBROUTINE s_psi
+END SUBROUTINE s_psi_

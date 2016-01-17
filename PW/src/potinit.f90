@@ -217,6 +217,10 @@ SUBROUTINE potinit()
      !
   end if
   !
+  ! ... plugin contribution to local potential
+  !
+  CALL plugin_scf_potential(rho,.FALSE.,-1.d0)
+  !
   ! ... compute the potential and store it in v
   !
   CALL v_of_rho( rho, rho_core, rhog_core, &

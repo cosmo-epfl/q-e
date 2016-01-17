@@ -11,8 +11,8 @@ SUBROUTINE read_file()
   !
   ! Wrapper routine, for compatibility
   !
-  USE io_files,             ONLY : nwordwfc, iunwfc, tmp_dir, wfc_dir
-  USE io_global,            ONLY : stdout
+  USE io_files,             ONLY : nwordwfc, iunwfc, prefix, tmp_dir, wfc_dir
+  USE io_global,            ONLY : stdout, ionode
   USE buffers,              ONLY : open_buffer, close_buffer
   USE wvfct,                ONLY : nbnd, npwx
   USE noncollin_module,     ONLY : npol
@@ -33,6 +33,9 @@ SUBROUTINE read_file()
   LOGICAL :: exst
   !
   ! ... Read the contents of the xml data file
+  !
+  IF ( ionode ) WRITE( stdout, '(/,5x,A,/,5x,A)') &
+     'Reading data from directory:', TRIM( tmp_dir ) // TRIM( prefix ) // '.save'
   !
   CALL read_xml_file ( )
   !
@@ -64,7 +67,7 @@ SUBROUTINE read_file()
   IF ( real_space ) THEN
     CALL betapointlist()
     CALL init_realspace_vars()
-    WRITE(stdout,'(5X,"Real space initialisation completed")')
+    IF( ionode ) WRITE(stdout,'(5x,"Real space initialisation completed")')
   ENDIF
   CALL newd()
   !
@@ -72,8 +75,18 @@ SUBROUTINE read_file()
   !
 END SUBROUTINE read_file
 !
-!----------------------------------------------------------------------------
 SUBROUTINE read_xml_file()
+  ! wrapper routine to call the default behavior
+  call read_xml_file_internal(.true.)
+END SUBROUTINE read_xml_file
+
+SUBROUTINE read_xml_file_nobs()
+  ! wrapper routine to load everything except for the band structure
+  call read_xml_file_internal(.false.)
+END SUBROUTINE read_xml_file_nobs
+
+!----------------------------------------------------------------------------
+SUBROUTINE read_xml_file_internal(withbs)
   !----------------------------------------------------------------------------
   !
   ! ... This routine allocates space for all quantities already computed
@@ -94,7 +107,7 @@ SUBROUTINE read_xml_file()
   USE cellmd,               ONLY : cell_factor, lmovecell
   USE fft_base,             ONLY : dfftp
   USE fft_interfaces,       ONLY : fwfft
-  USE grid_subroutines,     ONLY : realspace_grids_init
+  USE grid_subroutines,     ONLY : realspace_grid_init
   USE recvec_subs,          ONLY : ggen
   USE gvect,                ONLY : gg, ngm, g, gcutm, &
                                    eigts1, eigts2, eigts3, nl, gstart
@@ -117,9 +130,16 @@ SUBROUTINE read_xml_file()
   USE control_flags,        ONLY : gamma_only
   USE funct,                ONLY : get_inlc, get_dft_name
   USE kernel_table,         ONLY : initialize_kernel_table
-  USE esm,                  ONLY : do_comp_esm, esm_ggen_2d
+  USE esm,                  ONLY : do_comp_esm, esm_init
   !
   IMPLICIT NONE
+
+  ! Used to specify whether to read the band structure (files 
+  ! K??????/eigenval.xml), so one can skip it if not needed by
+  ! the post-processing tool. 
+  ! Set to True for the 'default' behavior of reading these files.
+  LOGICAL :: withbs
+
   INTEGER  :: i, is, ik, ibnd, nb, nt, ios, isym, ierr, inlc
   REAL(DP) :: rdum(1,1), ehart, etxc, vtxc, etotefield, charge
   REAL(DP) :: sr(3,3,48)
@@ -168,8 +188,8 @@ SUBROUTINE read_xml_file()
   ALLOCATE( tetra( 4, MAX( ntetra, 1 ) ) )
   !
   CALL set_dimensions()
-  CALL realspace_grids_init ( dfftp, dffts, at, bg, gcutm, gcutms )
-
+  CALL realspace_grid_init ( dfftp, at, bg, gcutm )
+  CALL realspace_grid_init ( dffts, at, bg, gcutms)
   !
   ! ... check whether LSDA
   !
@@ -201,7 +221,11 @@ SUBROUTINE read_xml_file()
   !
   ! ... here we read all the variables defining the system
   !
-  CALL pw_readfile( 'nowave', ierr )
+  if (withbs .eqv. .true.) then
+     CALL pw_readfile( 'nowave', ierr )
+  else 
+     CALL pw_readfile( 'nowavenobs', ierr )
+  end if
   !
   ! ... distribute across pools k-points and related variables.
   ! ... nks is defined by the following routine as the number 
@@ -253,7 +277,10 @@ SUBROUTINE read_xml_file()
   CALL pre_init()
   CALL allocate_fft()
   CALL ggen ( gamma_only, at, bg ) 
-  IF (do_comp_esm) CALL esm_ggen_2d ()
+  IF (do_comp_esm) THEN
+    CALL pw_readfile( 'esm', ierr )
+    CALL esm_init()
+  END IF
   CALL gshells ( lmovecell ) 
   !
   ! ... allocate the potential and wavefunctions
@@ -339,4 +366,4 @@ SUBROUTINE read_xml_file()
       !
     END SUBROUTINE set_dimensions
     !
-END SUBROUTINE read_xml_file
+  END SUBROUTINE read_xml_file_internal

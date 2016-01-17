@@ -66,7 +66,7 @@ PROGRAM ev
       IMPLICIT NONE
       INTEGER, PARAMETER:: nmaxpar=4, nmaxpt=100, nseek=10000, nmin=4
       INTEGER :: npar,npt,istat, ierr
-      CHARACTER :: bravais*3, au_unit*3, filin*256
+      CHARACTER :: bravais*8, au_unit*3, filin*256
       REAL(DP) :: par(nmaxpar), deltapar(nmaxpar), parmin(nmaxpar), &
              parmax(nmaxpar), v0(nmaxpt), etot(nmaxpt), efit(nmaxpt), &
              fac, emin, chisq, a
@@ -78,42 +78,42 @@ PROGRAM ev
   !
   IF ( ionode ) THEN
 
-      PRINT '(5x,"Lattice parameter or Volume are in (au, Ang) > ",$)'
-      READ '(a)', au_unit
+      WRITE(*,'(5x,"Lattice parameter or Volume are in (au, Ang) > ")', advance="NO")
+      READ(5,'(a)') au_unit
       in_angstrom = au_unit=='Ang' .or. au_unit=='ANG' .or. &
                     au_unit=='ang'
-      IF (in_angstrom) PRINT '(5x,"Assuming Angstrom")'
-      PRINT '(5x,"Enter type of bravais lattice (fcc, bcc, sc, noncubic) > ",$)'
-      READ '(a)',bravais
+      IF (in_angstrom) WRITE(*,'(5x,"Assuming Angstrom")')
+      WRITE(*,'(5x,"Enter type of bravais lattice (fcc, bcc, sc, noncubic) > ")', advance="NO")
+      READ(6,'(a)') bravais
 !
-      IF(bravais=='fcc'.or.bravais=='FCC') THEN
+      IF(trim(bravais)=='fcc'.or.trim(bravais)=='FCC') THEN
          fac = 0.25d0
-      ELSEIF(bravais=='bcc'.or.bravais=='BCC') THEN
+      ELSEIF(trim(bravais)=='bcc'.or.trim(bravais)=='BCC') THEN
          fac = 0.50d0
-      ELSEIF(bravais=='sc'.or.bravais=='SC') THEN
+      ELSEIF(trim(bravais)=='sc'.or.trim(bravais)=='SC') THEN
          fac = 1.0d0
       ELSEIF(bravais=='noncubic'.or.bravais=='NONCUBIC' .or.  &
-             bravais=='hex'.or.bravais=='HEX' ) THEN
+             trim(bravais)=='hex'.or.trim(bravais)=='HEX' ) THEN
 !         fac = sqrt(3d0)/2d0 ! not used
          fac = 0.0_DP ! not used
       ELSE
-         PRINT '(5x,"ev: unexpected lattice ",a3)', bravais
+         WRITE(*,'(5x,"ev: unexpected lattice <",a,">")') trim(bravais)
          STOP
       ENDIF
 !
-      PRINT '(5x,"Enter type of equation of state :"/&
-             &5x,"1=birch1, 2=birch2, 3=keane, 4=murnaghan > ",$)'
-      READ *,istat
+      WRITE(*,'(5x,"Enter type of equation of state :"/&
+            &  5x,"1=birch1, 2=birch2, 3=keane, 4=murnaghan > ")', advance="NO")
+      READ(5,*) istat
       IF(istat==1 .or. istat==4) THEN
          npar=3
       ELSEIF(istat==2 .or. istat==3) THEN
          npar=4
       ELSE
-         PRINT '(5x,"Unexpected eq. of state ",i2)', istat
+         WRITE(*,'(5x,"Unexpected eq. of state ",i2)') istat
          STOP
       ENDIF
-      PRINT '(5x,"Input file > ",$)'
-      READ '(a)',filin
+      WRITE(*,'(5x,"Input file > ")', advance="NO")
+      READ(5,'(a)') filin
       OPEN(unit=2,file=filin,status='old',form='formatted',iostat=ierr)
       IF (ierr/=0) THEN
          ierr= 1 
@@ -159,7 +159,7 @@ PROGRAM ev
       parmax(3) = 15.0d0
       parmax(4) = 0.0d0
 !
-      deltapar(1) = 0.1d0
+      deltapar(1) = 1.0d0
       deltapar(2) = 100.d0
       deltapar(3) = 1.0d0
       deltapar(4) = 0.01d0
@@ -272,12 +272,12 @@ PROGRAM ev
       INTEGER :: i, iun
       LOGICAL :: exst
 
-      PRINT '(5x,"Output file > ",$)'
-      READ '(a)',filout
+      WRITE(*,'(5x,"Output file > ")', advance="NO")
+      READ (5,'(a)') filout
       IF(filout/=' ') THEN
          iun=8
          INQUIRE(file=filout,exist=exst)
-         IF (exst) PRINT '(5x,"Beware: file ",A," will be overwritten")',&
+         IF (exst) WRITE(*,'(5x,"Beware: file ",A," will be overwritten")')&
                   trim(filout)
          OPEN(unit=iun,file=filout,form='formatted',status='unknown', &
               iostat=ierr)
@@ -325,7 +325,7 @@ PROGRAM ev
                     &f6.2," d2k0 =",f7.3," emin =",f11.5)') &
             (par(1)/fac)**(1d0/3d0), int(par(2)), par(3), par(4), emin
          WRITE(iun,'("# a0 =",f9.5," Ang, k0 =", f6.1," GPa,  V0 = ", &
-                  & f7.3," (a.u.)^3,  V0 =", f7.3," A^3 ",/)') &
+                  & f8.2," (a.u.)^3,  V0 =", f8.2," A^3 ",/)') &
            & (par(1)/fac)**(1d0/3d0)*bohr_radius_angs, par(2)/gpa_kbar, &
              par(1), par(1)*bohr_radius_angs**3
 

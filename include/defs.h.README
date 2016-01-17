@@ -63,14 +63,11 @@ Additional Features:
       __SOLVENT   For solvent model, under development
       __MS2       For QM-MM, under development
 Hardware/Compiler:
-      __STD_F95   Standard F95: no allocatable in arrays
       __AIX       Ibm rs/6000 machines
       __XLF       xlf compiler (ibm or macintosh with powerpc processor)
       __SX6       Nec sx-6 vector machines (Nec compiler)
       __PGI       Portland Group compiler (workarounds for compiler bugs)
       __GFORTRAN  gnu gfortran (workarounds for compiler bugs)
-      __INTEL     Intel ifc and ifort compilers (workaround for compiler 
-                  bugs and for insufficient stack size)
 OS:
 Parallel execution:
       __PARA      Parallel execution - should be replaced by:
@@ -79,8 +76,7 @@ Parallel execution:
 Libraries:
       __FFTW      FFT routines from internal FFTW library
       __FFTW3     FFT routines from external FFTW v.3 library
-      __SCSL      FFT routines from SGI SCSL scientific library
-      __SUNPERF   FFT routines from SUN sunperf scientific library
+      __DFTI      FFT routines from Intel MKL library
       __ESSL      use blas/lapack/fft routines from IBM ESSL library
       __LINUX_ESSL  use blas/lapack/fft routines from IBM ESSL library
                    (linux version)
@@ -90,7 +86,6 @@ Libraries:
       ASL, MICRO  SX-6 specific libraries
 Timing:
       __HPM        Hardware Performance Monitor (IBM SP)
-      __QK_USER__  for better timing of fftw in cray xt3 (?)
 Signals:
       __PTRACE        Enable traceback
       __TRAP_SIGUSR1  Enable signal trapping (experimental): code will stop

@@ -1,4 +1,11 @@
-!!----------------------------------------------------------------------------
+!
+! Copyright (C) 2001-2015 Quantum ESPRESSO group
+! This file is distributed under the terms of the
+! GNU General Public License. See the file `License'
+! in the root directory of the present distribution,
+! or http://www.gnu.org/copyleft/gpl.txt .
+!
+!--------------------------------------------------------------------
 module lr_dav_debug
 !----------------------------------------------------------------------------
 ! Created by Xiaochuan Ge (Aprile, 2013)
@@ -40,8 +47,8 @@ contains
     enddo
     
     inner_err=inner_err/(num_basis*num_basis)
-    write(stdout,'(/5x,"The error of the orthonalization of the basis &
-          is:",5x,E20.12)') inner_err
+    write(stdout,'(/5x,"The error of the orthonalization of the basis is:",&
+            & 5x,E20.12)') inner_err
     call check("inner_matrix")
     return
   end subroutine check_orth
@@ -184,7 +191,7 @@ contains
     use lr_dav_variables
     USE cell_base,              ONLY : omega
     USE wavefunctions_module, ONLY : psic
-    USE realus,              ONLY : fft_orbital_gamma, bfft_orbital_gamma
+    USE realus,              ONLY : invfft_orbital_gamma, fwfft_orbital_gamma
       USE gvect,                ONLY : gstart
 
     implicit none
@@ -202,7 +209,7 @@ contains
       banda(:)=dble(revc0(:,i,1))     
       bandb(:)=aimag(revc0(:,i,1))     
       wfck(:,1)=evc0(:,i,1)
-      call fft_orbital_gamma(wfck(:,:),1,1)  ! FFT: v  -> psic
+      call invfft_orbital_gamma(wfck(:,:),1,1)  ! FFT: v  -> psic
       norm=DDOT(dffts%nnr,psic(:),2,banda,1)/tot_nnr
 #ifdef __MPI
       call mp_barrier( world_comm )
@@ -211,7 +218,7 @@ contains
       print *, norm
 
       wfck(:,1)=evc0(:,i+1,1)
-      call fft_orbital_gamma(wfck(:,:),1,1)  ! FFT: v  -> psic
+      call invfft_orbital_gamma(wfck(:,:),1,1)  ! FFT: v  -> psic
       norm=DDOT(dffts%nnr,psic(:),2,bandb,1)/tot_nnr
 #ifdef __MPI
       call mp_barrier( world_comm )

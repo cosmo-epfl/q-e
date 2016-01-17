@@ -45,22 +45,14 @@ CONTAINS
     TYPE :: wavfun_list
        INTEGER :: occ,eup,edwn, nquant, lquant
        CHARACTER(len=2) :: label
-#ifdef __STD_F95
-       REAL(dp), POINTER :: wavefunc(:)
-#else
        REAL(dp), ALLOCATABLE :: wavefunc(:)
-#endif
        TYPE (wavfun_list), POINTER :: p
 
     END TYPE wavfun_list
 
     TYPE :: channel_list
        INTEGER :: lquant
-#ifdef __STD_F95
-       REAL(dp), POINTER :: channel(:)
-#else
        REAL(dp), ALLOCATABLE :: channel(:)
-#endif
        TYPE (channel_list), POINTER :: p
 
     END TYPE channel_list
@@ -304,11 +296,7 @@ CONTAINS
                 CYCLE
              ENDIF
           ENDIF
-#ifdef __STD_F95
-          IF ( associated(mtail%wavefunc) ) THEN
-#else
-             IF ( allocated(mtail%wavefunc) ) THEN
-#endif
+            IF ( allocated(mtail%wavefunc) ) THEN
                 ALLOCATE(mtail%p)
                 mtail=>mtail%p
                 NULLIFY(mtail%p)
@@ -601,7 +589,7 @@ CONTAINS
 
        WRITE(6,*) "Converted Pseudopotential in REAL space for ", upf_in%psd
        WRITE(6,*) "Atomic number and pseudo-charge"
-       WRITE(6,"(I3,F5.2)") atomic_number( upf_in%psd ),upf_in%zp
+       WRITE(6,"(I3,F8.2)") atomic_number( upf_in%psd ),upf_in%zp
        WRITE(6,*) "Energy units (rydberg/hartree/ev):"
        WRITE(6,*) "rydberg"
        WRITE(6,*) "Angular momentum of local component (0=s,1=p,2=d..)"

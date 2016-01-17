@@ -3,10 +3,10 @@
 include ../make.sys
 
 # location of needed modules
-MODFLAGS= $(MOD_FLAG)../iotk/src $(MOD_FLAG)../Modules $(MOD_FLAG).
+MODFLAGS= $(MOD_FLAG)../iotk/src $(MOD_FLAG)../Modules $(MOD_FLAG)../FFTXlib $(MOD_FLAG).
 
 OBJS = write_upf.o
-QEMODS = ../Modules/libqemod.a
+QEMODS = ../Modules/libqemod.a ../FFTXlib/libqefft.a
 
 TLDEPS = mods libs libiotk
 
@@ -65,7 +65,7 @@ interpolate.x : interpolate.o $(OBJS) $(QEMODS) $(LIBOBJS)
 
 tldeps:
 	if test -n "$(TLDEPS)" ; then \
-	( cd ../.. ; $(MAKE) $(TLDEPS) || exit 1 ) ; fi
+	( cd ../ ; $(MAKE) $(TLDEPS) || exit 1 ) ; fi
 
 clean :
 	- /bin/rm -f  *.x *.o *~ *.F90 *.mod *.d *.i *.L

@@ -101,7 +101,7 @@ subroutine solve_head
 
 
   write(stdout,*) 'Routine solve_head'
-  call flush_unit(stdout)
+  FLUSH(stdout)
 
   if(grid_type==5) then
      n=n_gauss
@@ -182,7 +182,7 @@ subroutine solve_head
   do i=1,n_gauss+1
      write(stdout,*) 'Freq',i,freqs(i)
   enddo
-  CALL flush_unit( stdout )
+  FLUSH( stdout )
   
   deallocate(x,w)
   head(:,:)=0.d0
@@ -275,7 +275,7 @@ subroutine solve_head
 
 
         write(stdout,*) 'ik:', ik
-        call flush_unit(stdout)
+        FLUSH(stdout)
         weight = wk (ik)
         ww = fpi * weight / omega
       
@@ -331,7 +331,7 @@ subroutine solve_head
 !loop on carthesian directions
            do ipol = 1,3
               write(stdout,*) 'ipol:', ipol
-              call flush_unit(stdout)
+              FLUSH(stdout)
         !
         ! computes/reads P_c^+ x psi_kpoint into dvpsi array
         !
@@ -346,7 +346,7 @@ subroutine solve_head
                  CALL ZGEMM( 'C', 'N', nbnd_occ (ik), nbnd_occ (ik), npw, &
                       (1.d0,0.d0), evc(1,1), npwx, dvpsi(1,1), npwx, (0.d0,0.d0), &
                       ps(1,1), nbnd )
-#ifdef __PARA
+#ifdef __MPI
            !call reduce (2 * nbnd * nbnd_occ (ik), ps)
                  call mp_sum(ps(1:nbnd_occ (ik),1:nbnd_occ (ik)),world_comm)
 #endif
@@ -386,13 +386,13 @@ subroutine solve_head
 !invert Hamiltonian
                     z_dl(1:nsteps_lanczos-1)=conjg(f(1:nsteps_lanczos-1,iv))
                     z_du(1:nsteps_lanczos-1)=f(1:nsteps_lanczos-1,iv)
-                    z_d(1:nsteps_lanczos)=d(1:nsteps_lanczos,iv)+dcmplx(-et(first_b+iv-1,ik)-scissor/rytoev,freqs(first_f+i-1))
+                    z_d(1:nsteps_lanczos)=d(1:nsteps_lanczos,iv)+dcmplx(-et(first_b+iv-1,ik)-scissor(1)/rytoev,freqs(first_f+i-1))
                     z_b(:)=(0.d0,0.d0)
                     z_b(1)=dble(omat(1,ipol,iv))
                     call zgtsv(nsteps_lanczos,1,z_dl,z_d,z_du,z_b,nsteps_lanczos,info)
                     if(info/=0) then
                        write(stdout,*) 'problems with ZGTSV'
-                       call flush_unit(stdout)
+                       FLUSH(stdout)
                        stop
                     endif
                     do jpol=1,3
@@ -472,7 +472,7 @@ subroutine solve_head
         head(first_f+i-1,3)=epsilon_g(3,3,i)
 
 
-#ifdef __PARA
+#ifdef __MPI
         call mp_sum ( pola_charge(:,:,:,i) , inter_pool_comm )
         call psyme (pola_charge(:,:,:,i))
 #else

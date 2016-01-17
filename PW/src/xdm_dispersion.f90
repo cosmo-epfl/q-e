@@ -249,11 +249,7 @@ CONTAINS
        DEALLOCATE(rhocor)
 
        ! define the starting index for each processor
-#ifdef __MPI
-       idx0 = dfftp%nr1x * dfftp%nr2x * SUM(dfftp%npp(1:me_pool))
-#else
-       idx0 = 0
-#endif
+       idx0 = dfftp%nr1x * dfftp%nr2x * dfftp%ipp(me_pool+1)
 
        ! allocate arrays and initialize
        ALLOCATE(b(dfftp%nnr),STAT=ialloc)
@@ -336,7 +332,7 @@ CONTAINS
              it = ityp(iat)
              nn = msh(it)
              taub = tau(:,iat) * alat
-             DO n = 1, dfftp%nnr
+             DO n = 1, dfftp%nr1x*dfftp%nr2x * dfftp%npl
                 idx = idx0 + n - 1
 
                 iz = idx / (dfftp%nr1x*dfftp%nr2x)
@@ -401,7 +397,7 @@ CONTAINS
           WRITE (stdout,'("# i        V             Vfree           M1             M2             M3")')
           DO iat = 1, nat
              it = ityp(iat)
-             WRITE (stdout,'(I3,1p,5(X,E14.6))') iat, avol(iat), afree(it), ml(1:3,iat)
+             WRITE (stdout,'(I3,1p,5(1X,E14.6))') iat, avol(iat), afree(it), ml(1:3,iat)
           END DO
           WRITE (stdout,*)
        END IF
@@ -431,7 +427,7 @@ CONTAINS
              rvdw(i,j) = a1 * rc + a2
              rvdw(j,i) = rvdw(i,j)
 
-             WRITE (stdout,'(I3,X,I3,1p,5(X,E14.6))') i, j, cx(i,j,2), cx(i,j,3), cx(i,j,4), rc, rvdw(i,j)
+             WRITE (stdout,'(I3,1X,I3,1p,5(1X,E14.6))') i, j, cx(i,j,2), cx(i,j,3), cx(i,j,4), rc, rvdw(i,j)
           END DO
        END DO
 
@@ -550,14 +546,14 @@ CONTAINS
        WRITE (stdout,'("  Evdw(C8,Ry)      = ",1p,E20.12)') ehadd(8)
        WRITE (stdout,'("  Evdw(C10,Ry)     = ",1p,E20.12)') ehadd(10)
        DO i = 1, nat
-          WRITE (stdout,'("  Fvdw (",I3.3,",Ry/bohr) = ",1p,3(E20.12,X))') i, for(:,i)
+          WRITE (stdout,'("  Fvdw (",I3.3,",Ry/bohr) = ",1p,3(E20.12,1X))') i, for(:,i)
        END DO
-       WRITE (stdout,'("  sigma_vdw (Ry/bohr**3) = ",1p,3(E20.12,X)," ")') sigma(1,:)
-       WRITE (stdout,'("                           ",1p,3(E20.12,X)," ")') sigma(2,:)
-       WRITE (stdout,'("                           ",1p,3(E20.12,X)," ")') sigma(3,:)
-       WRITE (stdout,'("  sigma_vdw (GPa) = ",1p,3(E20.12,X)," ")') 0.5_DP*sigma(1,:)*au_gpa
-       WRITE (stdout,'("                    ",1p,3(E20.12,X)," ")') 0.5_DP*sigma(2,:)*au_gpa
-       WRITE (stdout,'("                    ",1p,3(E20.12,X)," ")') 0.5_DP*sigma(3,:)*au_gpa
+       WRITE (stdout,'("  sigma_vdw (Ry/bohr**3) = ",1p,3(E20.12,1X)," ")') sigma(1,:)
+       WRITE (stdout,'("                           ",1p,3(E20.12,1X)," ")') sigma(2,:)
+       WRITE (stdout,'("                           ",1p,3(E20.12,1X)," ")') sigma(3,:)
+       WRITE (stdout,'("  sigma_vdw (GPa) = ",1p,3(E20.12,1X)," ")') 0.5_DP*sigma(1,:)*au_gpa
+       WRITE (stdout,'("                    ",1p,3(E20.12,1X)," ")') 0.5_DP*sigma(2,:)*au_gpa
+       WRITE (stdout,'("                    ",1p,3(E20.12,1X)," ")') 0.5_DP*sigma(3,:)*au_gpa
        WRITE (stdout,*)
     END IF
 
@@ -806,13 +802,11 @@ CONTAINS
        ENDDO
        DEALLOCATE(d1y,d2y)
 
-#if defined __MPI
-       idx0 =  dfftp%nr1x* dfftp%nr2x * SUM ( dfftp%npp(1:me_pool) )
-#else
-       idx0 = 0
-#endif
+       ! define the starting index for each processor
+       idx0 = dfftp%nr1x * dfftp%nr2x * dfftp%ipp(me_pool+1)
+
        ALLOCATE(ylm_posi(1,i%l**2))
-       rsp_point : DO ir = 1,  dfftp%nnr
+       rsp_point : DO ir = 1, dfftp%nr1x*dfftp%nr2x * dfftp%npl
           ! three dimensional indices (i,j,k)
           idx   = idx0 + ir - 1
           k     = idx / ( dfftp%nr1x* dfftp%nr2x)
@@ -886,11 +880,8 @@ CONTAINS
     integer :: n, idx0, idx, ix, iy, iz
     real(DP) :: x(3), xx(3), r, r2, rrho
 
-#ifdef __MPI
-    idx0 = dfftp%nr1x * dfftp%nr2x * SUM(dfftp%npp(1:me_pool))
-#else
-    idx0 = 0
-#endif
+    ! define the starting index for each processor
+    idx0 = dfftp%nr1x * dfftp%nr2x * dfftp%ipp(me_pool+1)
 
     rhot = 0._DP
     rhoc = 0._DP

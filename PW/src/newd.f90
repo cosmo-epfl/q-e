@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2013 Quantum ESPRESSO group
+! Copyright (C) 2001-2015 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -11,35 +11,7 @@ MODULE dfunct
 CONTAINS
 !---------------------------------------
 
-SUBROUTINE newq(vr,deeq,skip_vltot) 
-  !
-  !   This routine computes the integral of the perturbed potential with
-  !   the Q function 
-  !
-  USE kinds,                ONLY : DP
-  USE fft_base,             ONLY : dfftp
-  USE ions_base,            ONLY : nat
-  USE lsda_mod,             ONLY : nspin
-  USE uspp_param,           ONLY : nhm
-  !
-  IMPLICIT NONE
-  !
-  ! Input: potential , output: contribution to integral
-  REAL(kind=dp), intent(in)  :: vr(dfftp%nnr,nspin)
-  REAL(kind=dp), intent(inout) :: deeq( nhm, nhm, nat, nspin )
-  LOGICAL, intent(in) :: skip_vltot
-  !
-#if defined(__CUDA) && !defined(__DISABLE_CUDA_NEWD)
-  CALL newq_compute_gpu(vr,deeq,skip_vltot)
-#else
-  CALL newq_compute(vr,deeq,skip_vltot)
-#endif
-  !
-  RETURN
-
-END SUBROUTINE newq
-
-SUBROUTINE newq_compute(vr,deeq,skip_vltot)
+SUBROUTINE newq(vr,deeq,skip_vltot)
   !
   !   This routine computes the integral of the perturbed potential with
   !   the Q function
@@ -53,7 +25,6 @@ SUBROUTINE newq_compute(vr,deeq,skip_vltot)
                                    eigts1, eigts2, eigts3, nl
   USE lsda_mod,             ONLY : nspin
   USE scf,                  ONLY : vltot
-  USE uspp,                 ONLY : okvan, indv
   USE uspp_param,           ONLY : upf, lmaxq, nh, nhm
   USE control_flags,        ONLY : gamma_only
   USE wavefunctions_module, ONLY : psic
@@ -70,39 +41,26 @@ SUBROUTINE newq_compute(vr,deeq,skip_vltot)
   REAL(kind=dp), intent(out) :: deeq( nhm, nhm, nat, nspin )
   LOGICAL, intent(in) :: skip_vltot !If .false. vltot is added to vr when necessary
   ! INTERNAL
-  INTEGER :: ig, nt, ih, jh, na, is, nht, nb, mb
+  INTEGER :: ig, nt, ih, jh, na, is, ijh, nij, nb, nab
   ! counters on g vectors, atom type, beta functions x 2,
   !   atoms, spin, aux, aux, beta func x2 (again)
-#ifdef __OPENMP
-  INTEGER :: mytid, ntids, omp_get_thread_num, omp_get_num_threads
-#endif
-  COMPLEX(DP), ALLOCATABLE :: aux(:,:), qgm(:), qgm_na(:)
+  COMPLEX(DP), ALLOCATABLE :: vaux(:,:), aux(:,:), qgm(:,:)
     ! work space
-  COMPLEX(DP) :: dtmp
-  REAL(DP), ALLOCATABLE :: ylmk0(:,:), qmod(:)
+  REAL(DP), ALLOCATABLE :: ylmk0(:,:), qmod(:), deeaux(:,:)
     ! spherical harmonics, modulus of G
-  REAL(DP) :: ddot
-  INTEGER :: fact
-
+  REAL(DP) :: fact
+  !
   IF ( gamma_only ) THEN
-     !
-     fact = 2
-     !
+     fact = 2.0_dp
   ELSE
-     !
-     fact = 1
-     !
+     fact = 1.0_dp
   END IF
-  !
-  CALL start_clock( 'newd' )
-  !
-  ALLOCATE( aux( ngm, nspin_mag ),  &
-            qgm( ngm ), qmod( ngm ), ylmk0( ngm, lmaxq*lmaxq ) )
   !
   deeq(:,:,:,:) = 0.D0
   !
-  CALL ylmr2( lmaxq * lmaxq, ngm, g, gg, ylmk0 )
+  ALLOCATE( vaux(ngm,nspin_mag), qmod( ngm ), ylmk0( ngm, lmaxq*lmaxq ) )
   !
+  CALL ylmr2( lmaxq * lmaxq, ngm, g, gg, ylmk0 )
   qmod(1:ngm) = SQRT( gg(1:ngm) )
   !
   ! ... fourier transform of the total effective potential
@@ -110,127 +68,110 @@ SUBROUTINE newq_compute(vr,deeq,skip_vltot)
   DO is = 1, nspin_mag
      !
      IF ( (nspin_mag == 4 .AND. is /= 1) .or. skip_vltot ) THEN 
-        !
-        psic(:) = vr(:,is)
-        !
+!$omp parallel do default(shared) private(ig)
+        do ig=1,dfftp%nnr
+           psic(ig) = vr(ig,is)
+        end do
+!$omp end parallel do
      ELSE
-        !
-        psic(:) = vltot(:) + vr(:,is)
-        !
+!$omp parallel do default(shared) private(ig)
+        do ig=1,dfftp%nnr
+           psic(ig) = vltot(ig) + vr(ig,is)
+        end do
+!$omp end parallel do
      END IF
-     !
      CALL fwfft ('Dense', psic, dfftp)
-     !
-     aux(1:ngm,is) = psic( nl(1:ngm) )
+!$omp parallel do default(shared) private(ig)
+        do ig=1,ngm
+           vaux(ig, is) = psic(nl(ig))
+        end do
+!$omp end parallel do
      !
   END DO
-  !
-  ! ... here we compute the integral Q*V for each atom,
-  ! ...       I = sum_G exp(-iR.G) Q_nm v^*
-  !
+
   DO nt = 1, ntyp
      !
      IF ( upf(nt)%tvanp ) THEN
         !
+        ! nij = max number of (ih,jh) pairs per atom type nt
+        !
+        nij = nh(nt)*(nh(nt)+1)/2
+        ALLOCATE ( qgm(ngm,nij) )
+        !
+        ! ... Compute and store Q(G) for this atomic species 
+        ! ... (without structure factor)
+        !
+        ijh = 0
         DO ih = 1, nh(nt)
-           !
            DO jh = ih, nh(nt)
-              !
-              ! ... The Q(r) for this atomic species without structure factor
-              !
-              CALL qvan2( ngm, ih, jh, nt, qmod, qgm, ylmk0 )
-              !
-#ifdef __OPENMP
-!$omp parallel default(shared), private(na,qgm_na,is,dtmp,ig,mytid,ntids)
-              mytid = omp_get_thread_num()  ! take the thread ID
-              ntids = omp_get_num_threads() ! take the number of threads
-#endif
-              ALLOCATE(  qgm_na( ngm ) )
-              !
-              DO na = 1, nat
-                 !
-#ifdef __OPENMP
-                 ! distribute atoms round robin to threads
-                 !
-                 IF( MOD( na, ntids ) /= mytid ) CYCLE
-#endif
-                 !
-                 IF ( ityp(na) == nt ) THEN
-                    !
-                    ! ... The Q(r) for this specific atom
-                    !
-                    qgm_na(1:ngm) = qgm(1:ngm) * eigts1(mill(1,1:ngm),na) &
-                                               * eigts2(mill(2,1:ngm),na) &
-                                               * eigts3(mill(3,1:ngm),na)
-                    !
-                    ! ... and the product with the Q functions
-                    !
-                    DO is = 1, nspin_mag
-                       !
-#ifdef __OPENMP
-                       dtmp = 0.0d0
-                       DO ig = 1, ngm
-                          dtmp = dtmp + aux( ig, is ) * CONJG( qgm_na( ig ) )
-                       END DO
-#else
-                       dtmp = ddot( 2 * ngm, aux(1,is), 1, qgm_na, 1 )
-#endif
-                       deeq(ih,jh,na,is) = fact * omega * DBLE( dtmp )
-                       !
-                       IF ( gamma_only .AND. gstart == 2 ) &
-                           deeq(ih,jh,na,is) = deeq(ih,jh,na,is) - &
-                                           omega * DBLE( aux(1,is) * qgm_na(1) )
-                       !
-                       deeq(jh,ih,na,is) = deeq(ih,jh,na,is)
-                       !
+              ijh = ijh + 1
+              CALL qvan2 ( ngm, ih, jh, nt, qmod, qgm(1,ijh), ylmk0 )
+           END DO
+        END DO
+        !
+        ! count max number of atoms of type nt
+        !
+        nab = 0
+        DO na = 1, nat
+           IF ( ityp(na) == nt ) nab = nab + 1
+        END DO
+        ALLOCATE ( aux (ngm, nab ), deeaux(nij, nab) )
+        !
+        ! ... Compute and store V(G) times the structure factor e^(-iG*tau)
+        !
+        DO is = 1, nspin_mag
+           nb = 0
+           DO na = 1, nat
+              IF ( ityp(na) == nt ) THEN
+                 nb = nb + 1
+!$omp parallel do default(shared) private(ig)
+                 do ig=1,ngm
+                    aux(ig, nb) = vaux(ig,is) * CONJG ( &
+                      eigts1(mill(1,ig),na) * &
+                      eigts2(mill(2,ig),na) * &
+                      eigts3(mill(3,ig),na) )
+                 end do
+!$omp end parallel do
+              END IF
+           END DO
+           !
+           ! ... here we compute the integral Q*V for all atoms of this kind
+           !
+           CALL DGEMM( 'C', 'N', nij, nab, 2*ngm, fact, qgm, 2*ngm, aux, &
+                    2*ngm, 0.0_dp, deeaux, nij )
+           IF ( gamma_only .AND. gstart == 2 ) &
+                CALL DGER(nij, nab,-1.0_dp, qgm, 2*ngm, aux, 2*ngm, deeaux, nij)
+           !
+           nb = 0
+           DO na = 1, nat
+              IF ( ityp(na) == nt ) THEN
+                 nb = nb + 1
+                 ijh = 0
+                 DO ih = 1, nh(nt)
+                    DO jh = ih, nh(nt)
+                       ijh = ijh + 1
+                       deeq(ih,jh,na,is) = omega * deeaux(ijh,nb)
+                       if (jh > ih) deeq(jh,ih,na,is) = deeq(ih,jh,na,is)
                     END DO
-                    !
-                 END IF
-                 !
-              END DO
-              !
-              DEALLOCATE( qgm_na )
-#ifdef __OPENMP
-!$omp end parallel
-#endif
-              !
+                 END DO
+              END IF
            END DO
            !
         END DO
+        !
+        DEALLOCATE ( deeaux, aux, qgm )
         !
      END IF
      !
   END DO
   !
+  DEALLOCATE( qmod, ylmk0, vaux )
   CALL mp_sum( deeq( :, :, :, 1:nspin_mag ), intra_bgrp_comm )
   !
-  DEALLOCATE( aux, qgm, qmod, ylmk0 )
+END SUBROUTINE newq
   !
-END SUBROUTINE newq_compute
-!---------------------------------------
-SUBROUTINE newd()
-  USE uspp,          ONLY : deeq
-  USE realus,        ONLY : newd_r
-  USE noncollin_module, ONLY : noncolin
-  USE control_flags, ONLY : tqr
-  USE ldaU,          ONLY : lda_plus_U, U_projection
-  IMPLICIT NONE
-  !
-  IF (tqr) THEN
-     CALL newd_r()
-  ELSE
-     CALL newd_g()
-  END IF
-  !
-  IF (.NOT.noncolin) CALL add_paw_to_deeq(deeq)
-  !
-  IF (lda_plus_U .AND. (U_projection == 'pseudo')) CALL add_vhub_to_deeq(deeq)
-  !
-  RETURN
-  !
-END SUBROUTINE newd
 !----------------------------------------------------------------------------
-SUBROUTINE newd_g()
+SUBROUTINE newd( ) 
   !----------------------------------------------------------------------------
   !
   ! ... This routine computes the integral of the effective potential with
@@ -240,18 +181,21 @@ SUBROUTINE newd_g()
   USE kinds,                ONLY : DP
   USE ions_base,            ONLY : nat, ntyp => nsp, ityp
   USE lsda_mod,             ONLY : nspin
-  USE uspp,                 ONLY : deeq, dvan, deeq_nc, dvan_so, okvan, indv
+  USE uspp,                 ONLY : deeq, dvan, deeq_nc, dvan_so, okvan
   USE uspp_param,           ONLY : upf, lmaxq, nh, nhm
   USE spin_orb,             ONLY : lspinorb, domag
   USE noncollin_module,     ONLY : noncolin, nspin_mag
   USE uspp,                 ONLY : nhtol, nhtolm
   USE scf,                  ONLY : v
+  USE realus,        ONLY : newq_r
+  USE control_flags, ONLY : tqr
+  USE ldaU,          ONLY : lda_plus_U, U_projection
   !
   IMPLICIT NONE
   !
   INTEGER :: ig, nt, ih, jh, na, is, nht, nb, mb
-    ! counters on g vectors, atom type, beta functions x 2,
-    !   atoms, spin, aux, aux, beta func x2 (again)
+  ! counters on g vectors, atom type, beta functions x 2,
+  !   atoms, spin, aux, aux, beta func x2 (again)
   !
   !
   IF ( .NOT. okvan ) THEN
@@ -292,7 +236,18 @@ SUBROUTINE newd_g()
      !
   END IF
   !
-  call newq(v%of_r,deeq,.false.)
+  CALL start_clock( 'newd' )
+  !
+  IF (tqr) THEN
+     CALL newq_r(v%of_r,deeq,.false.)
+  ELSE
+#if defined(__CUDA) && !defined(__DISABLE_CUDA_NEWD)
+     CALL newq_compute_gpu(v%of_r,deeq,.false.)
+#else
+     CALL newq(v%of_r,deeq,.false.)
+#endif
+  END IF
+  !
   IF (noncolin) call add_paw_to_deeq(deeq)
   !
   atoms : &
@@ -328,6 +283,10 @@ SUBROUTINE newd_g()
      END IF if_noncolin
      !
   END DO atoms
+  !
+  IF (.NOT.noncolin) CALL add_paw_to_deeq(deeq)
+  !
+  IF (lda_plus_U .AND. (U_projection == 'pseudo')) CALL add_vhub_to_deeq(deeq)
   !
   CALL stop_clock( 'newd' )
   !
@@ -467,6 +426,6 @@ SUBROUTINE newd_g()
     RETURN
     END SUBROUTINE newd_nc
     !
-END SUBROUTINE newd_g
+END SUBROUTINE newd
 
 END MODULE dfunct

@@ -132,7 +132,7 @@ PROGRAM pw2wannier90
      !
      !   set default values for variables in namelist
      !
-     CALL get_env( 'ESPRESSO_TMPDIR', outdir )
+     CALL get_environment_variable( 'ESPRESSO_TMPDIR', outdir )
      IF ( trim( outdir ) == ' ' ) outdir = './'
      prefix = ' '
      seedname = 'wannier'
@@ -1186,7 +1186,7 @@ SUBROUTINE compute_mmn
    DO ik=1,iknum
       WRITE (stdout,'(i8)',advance='no') ik
       IF( MOD(ik,10) == 0 ) WRITE (stdout,*)
-      CALL flush_unit(stdout)
+      FLUSH(stdout)
       ikevc = ik + ikstart - 1
          CALL davcio (evc, 2*nwordwfc, iunwfc, ikevc, -1 )
       CALL gk_sort (xk(1,ik), ngm, g, ecutwfc / tpiba2, npw, igk, g2kin)
@@ -2040,7 +2040,7 @@ SUBROUTINE compute_amn
    DO ik=1,iknum
       WRITE (stdout,'(i8)',advance='no') ik
       IF( MOD(ik,10) == 0 ) WRITE (stdout,*)
-      CALL flush_unit(stdout)
+      FLUSH(stdout)
       ikevc = ik + ikstart - 1
 !      if(noncolin) then
 !         call davcio (evc_nc, 2*nwordwfc, iunwfc, ikevc, -1 )
@@ -2323,7 +2323,8 @@ SUBROUTINE write_plot
    USE klist,           ONLY : nkstot, xk
    USE gvect,           ONLY : g, ngm
    USE cell_base,       ONLY : tpiba2
-   USE fft_base,        ONLY : cgather_smooth, dffts
+   USE fft_base,        ONLY : dffts
+   USE scatter_mod,     ONLY : gather_grid
    USE fft_interfaces,  ONLY : invfft
    USE noncollin_module,ONLY : noncolin
 
@@ -2366,7 +2367,7 @@ SUBROUTINE write_plot
 
       WRITE (stdout,'(i8)',advance='no') ik
       IF( MOD(ik,10) == 0 ) WRITE (stdout,*)
-      CALL flush_unit(stdout)
+      FLUSH(stdout)
 
       ikevc = ik - ikstart + 1
 
@@ -2408,7 +2409,7 @@ SUBROUTINE write_plot
          CALL invfft ('Wave', psic, dffts)
          IF (reduce_unk) pos=0
 #ifdef __MPI
-         CALL cgather_smooth(psic,psic_all)
+         CALL gather_grid(dffts,psic,psic_all)
          IF (reduce_unk) THEN
             DO k=1,dffts%nr3,2
                DO j=1,dffts%nr2,2
@@ -2425,7 +2426,7 @@ SUBROUTINE write_plot
             IF (reduce_unk) THEN
                WRITE (iun_plot,'(2ES20.10)') (psic_small(j),j=1,n1by2*n2by2*n3by2)
             ELSE
-               WRITE (iun_plot,*) (psic_all(j),j=1,dffts%nr1*dffts%nr2*dffts%nr3)
+               WRITE (iun_plot,'(2ES20.10)') (psic_all(j),j=1,dffts%nr1*dffts%nr2*dffts%nr3)
             ENDIF
          ELSE
             IF (reduce_unk) THEN

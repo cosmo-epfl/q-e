@@ -5,12 +5,8 @@
 ! in the root directory of the present distribution,
 ! or http://www.gnu.org/copyleft/gpl.txt .
 !
-#if defined(__ABSOFT)
-#  define getarg getarg_
-#  define iargc  iargc_
-#endif
-!
 PROGRAM sumpdos
+  !
   IMPLICIT NONE
   !
   ! AUTHOR: Andrea Ferretti
@@ -21,8 +17,6 @@ PROGRAM sumpdos
   ! file names are read from stdin
   ! USAGE: sumpdos <file1> ... <fileN>
   !
-  INTEGER             :: iargc              ! function giving no of arguments
-
   INTEGER             :: ngrid              ! dimension of the energy grid
   INTEGER             :: nfile              ! number of files to sum
   INTEGER             :: nspin              ! number of spin_component
@@ -51,13 +45,13 @@ efermi = 0.0d0
 !
 ! get the number of arguments (i.e. the number of files)
 !
-   nfile = iargc ()
+   nfile = command_argument_count ()
    IF ( nfile == 0 ) THEN
       WRITE(0,"( 'No file to sum' )")
       STOP
    ENDIF
 
-   CALL getarg ( 1, str1 )
+   CALL get_command_argument ( 1, str1 )
    !
    SELECT CASE ( trim(str1) )
    CASE ( "-h" )
@@ -78,7 +72,7 @@ efermi = 0.0d0
       !
       ! read file names from file
       !
-      CALL getarg ( 2, filein )
+      CALL get_command_argument ( 2, filein )
       IF ( len_trim(filein) == 0 ) CALL errore('sumpdos','provide filein name',2)
 
       INQUIRE( FILE=trim(filein), EXIST=exist )
@@ -125,7 +119,7 @@ efermi = 0.0d0
       ALLOCATE( file(nfile), STAT=ierr )
       IF (ierr/=0) CALL errore('sumpdos','allocating FILE',abs(ierr))
       DO iarg = 1, nfile
-         CALL getarg ( iarg, file(iarg) )
+         CALL get_command_argument ( iarg, file(iarg) )
       ENDDO
 
    END SELECT

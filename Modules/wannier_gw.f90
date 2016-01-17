@@ -24,8 +24,8 @@ MODULE wannier_gw
     !options for grid_freq=5
   INTEGER :: second_grid_n!sub spacing for second grid
   INTEGER :: second_grid_i!max regular step using the second grid
-  LOGICAL :: l_scissor!if true displaces occupied manifold of scissor
-  REAL(kind=DP) :: scissor!see above
+  LOGICAL :: l_scissor!if true displaces occupied manifold of scissor(1) and unoccupied manifold of scissor(2)
+  REAL(kind=DP) :: scissor(2)!see above
   !From pw4gww
   TYPE real_matrix_pointer
      REAL(kind=DP), DIMENSION(:,:), POINTER :: p
@@ -190,12 +190,12 @@ MODULE wannier_gw
   REAL(kind=DP) :: s_bse!threshold for wannier function overlap
   REAL(kind=DP) :: dual_bse!dual factor for bse calculations
 
+  LOGICAL :: l_simple!if true writes on disk polarizability basis on real space for further post-processing
+
   LOGICAL :: l_list !if true uses startegy for large systems from list of states included in s_first_state, s_last_state
   INTEGER :: n_list(2)!number of states in list for the 2 spin channels
   INTEGER, ALLOCATABLE :: i_list(:,:) !list of KS states to be computed 
 
-  !LOGICAL :: l_scissor! if true uses a scissor
-  !REAL(kind=DP) :: scissor!value for scissor in eV
   LOGICAL :: l_full!if true prepare data for further post-processing for a full-relativistic calculation
   INTEGER :: n_full!numeber of proper relativistic states in G of GW
 
@@ -205,6 +205,7 @@ MODULE wannier_gw
   INTEGER :: len_head_block_freq!length of blocks on frequency
   INTEGER :: len_head_block_wfc!length of blocks on unperturbed occupied wfcs 
 
+  
 
   INTERFACE free_memory
 

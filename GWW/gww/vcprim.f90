@@ -114,7 +114,7 @@ SUBROUTINE add_vcprim_conduction(cpp, uu, up, vp)
   if(cpp%cprim <= cpp%nums_occ) return
   if(cpp%numpw_para /= vp%numpw_para) then
      write(stdout,*) 'add_vcprim_conduction NOT CORRESPONDING'
-     call flush_unit(stdout)
+     FLUSH(stdout)
      stop
   endif
 
@@ -224,7 +224,7 @@ SUBROUTINE collect_cprim_prod(cpp,cppd)
   
   if(.not.cppd%is_parallel) then
      write(stdout,*) 'collect_cprim_prod: NOT CORRESPONDING'
-     call flush_unit(stdout)
+     FLUSH(stdout)
      stop
   endif
 
@@ -243,7 +243,7 @@ SUBROUTINE collect_cprim_prod(cpp,cppd)
      sndbuf(:)=0.d0
      sndbuf(1:cppd%numpw_para)=cppd%cpmat(1:cppd%numpw_para,ii)
 
-#ifdef __PARA
+#ifdef __MPI
      call MPI_ALLGATHER(sndbuf,l_blk,MPI_DOUBLE_PRECISION,cpp%cpmat(:,ii),l_blk,MPI_DOUBLE_PRECISION,&
           world_comm, ierr)
 

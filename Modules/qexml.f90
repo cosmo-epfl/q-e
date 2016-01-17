@@ -69,7 +69,7 @@ MODULE qexml_module
             qexml_write_planewaves, qexml_write_spin, qexml_write_magnetization, &
             qexml_write_xc, qexml_write_exx, qexml_write_occ, qexml_write_bz, qexml_write_para, &
             qexml_write_bands_pw,qexml_write_bands_cp, qexml_write_bands_info, qexml_write_eig, &
-            qexml_write_gk, qexml_write_wfc, qexml_write_rho
+            qexml_write_gk, qexml_write_wfc, qexml_write_rho, qexml_write_esm
   !
   PUBLIC :: qexml_read_header, qexml_read_status_cp, qexml_read_cell, qexml_read_moving_cell, qexml_read_ions,      &
             qexml_read_symmetry, qexml_read_efield,                   &
@@ -77,10 +77,10 @@ MODULE qexml_module
             qexml_read_occ, qexml_read_bz, qexml_read_phonon,         &
             qexml_read_bands_pw, qexml_read_bands_cp, qexml_read_bands_info,                  &
             qexml_read_gk, qexml_read_wfc, qexml_read_rho, qexml_read_magnetization, &
-            qexml_read_exx, qexml_read_para
+            qexml_read_exx, qexml_read_para, qexml_read_esm
   
   !
-  PUBLIC :: qexml_wfc_filename, qexml_create_directory, qexml_save_history, &
+  PUBLIC :: qexml_wfc_filename, qexml_create_directory, &
             qexml_kpoint_dirname, qexml_restart_dirname
   !
 CONTAINS
@@ -137,7 +137,7 @@ CONTAINS
           !
       ENDIF
       !
-      ! the presence of directories overwirtes any info
+      ! the presence of directories overwrites any info
       ! about datafiles
       !
       IF ( present( dir ) ) THEN
@@ -176,6 +176,7 @@ CONTAINS
       IF ( present(binary) ) binary_ = binary
       !
       SELECT CASE ( trim(action) )
+      !
       CASE ( "read", "READ" )
           !
           CALL iotk_open_read ( iunit, FILE = trim(filename), IERR=ierr )
@@ -207,7 +208,6 @@ CONTAINS
       !
       !
     END SUBROUTINE qexml_openfile
-    !
     !
     !------------------------------------------------------------------------
     SUBROUTINE qexml_closefile( action, ierr)
@@ -527,52 +527,6 @@ CONTAINS
       !
     END FUNCTION qexml_wfc_filename
     !
-    !
-    !------------------------------------------------------------------------
-    SUBROUTINE qexml_save_history( dirname, iter, ierr )
-      !------------------------------------------------------------------------
-      !
-      ! ... a copy of the xml descriptor (data-file.xml) is saved in the 
-      ! ... history subdir
-      !
-      USE io_files, ONLY : xmlpun_base
-      !
-      IMPLICIT NONE
-      !
-      CHARACTER(LEN=*), INTENT(IN) :: dirname
-      INTEGER,          INTENT(IN) :: iter
-      INTEGER,          INTENT(OUT) :: ierr
-      !
-      !
-      ierr = 0
-      !
-#if defined (__VERBOSE_SAVE)
-      !
-      CHARACTER(LEN=256) :: filename
-      CHARACTER(LEN=6)   :: hindex
-      !
-      CALL qexml_create_directory( TRIM( dirname ) // '/history', ierr )
-      !
-      IF ( ierr /= 0) RETURN
-      !
-      WRITE( hindex, FMT = '(I6.6)' ) iter
-      !
-      !
-      filename = TRIM( dirname ) // '/history/' // &
-           & TRIM( xmlpun_base ) // hindex // '.xml'
-      !
-      CALL qexml_copy_file( TRIM( dirname ) // "/" // TRIM( xmlpun ), &
-           TRIM( filename ), ierr )
-      !
-      !
-      !
-#endif
-      !
-      RETURN
-      !
-    END SUBROUTINE qexml_save_history
-    !
-    !
     !------------------------------------------------------------------------
     SUBROUTINE qexml_copy_file( file_in, file_out, ierr )
       !------------------------------------------------------------------------
@@ -728,7 +682,7 @@ CONTAINS
                                   energy_units)
       !------------------------------------------------------------------------
       !
-      INTEGER, INTENT(in) :: nfi
+      INTEGER,  INTENT(in) :: nfi
       REAL(DP), INTENT(in) :: simtime, ekin,eht,esr,eself,epseu,enl,exc,vave,enthal
       CHARACTER(len=*), INTENT(in) :: time_units, title, energy_units
       
@@ -764,9 +718,9 @@ CONTAINS
       !------------------------------------------------------------------------
       !
       INTEGER,          INTENT(in) :: ibravais_latt
-      REAL(DP),        INTENT(in) :: celldm(6), alat
-      REAL(DP),        INTENT(in) :: a1(3), a2(3), a3(3)
-      REAL(DP),        INTENT(in) :: b1(3), b2(3), b3(3)
+      REAL(DP),         INTENT(in) :: celldm(6), alat
+      REAL(DP),         INTENT(in) :: a1(3), a2(3), a3(3)
+      REAL(DP),         INTENT(in) :: b1(3), b2(3), b3(3)
       CHARACTER(len=*), INTENT(in) :: alat_units, a_units, b_units
       LOGICAL,          INTENT(in) :: do_mp, do_mt, do_esm
       !
@@ -880,9 +834,9 @@ CONTAINS
       CHARACTER(len=*), INTENT(in) :: psfile(:)
       CHARACTER(len=*), INTENT(in) :: pseudo_dir
       CHARACTER(len=*), INTENT(in) :: dirname
-      REAL(DP),        INTENT(in) :: amass(:)
+      REAL(DP),         INTENT(in) :: amass(:)
       CHARACTER(len=*), INTENT(in) :: amass_units
-      REAL(DP),        INTENT(in) :: tau(:,:)
+      REAL(DP),         INTENT(in) :: tau(:,:)
       CHARACTER(len=*), INTENT(in) :: tau_units
       INTEGER,          INTENT(in) :: if_pos(:,:)
       REAL(DP),         INTENT(in) :: pos_unit
@@ -1040,10 +994,10 @@ CONTAINS
     SUBROUTINE qexml_write_efield( tefield, dipfield, edir, emaxpos, eopreg, eamp )
       !------------------------------------------------------------------------
       !
-      LOGICAL, INTENT(in)   :: tefield        ! if .TRUE. a finite electric field
-                                              ! is added to the local potential
-      LOGICAL, INTENT(in)   :: dipfield       ! if .TRUE. the dipole field is subtracted
-      INTEGER, INTENT(in)   :: edir           ! direction of the field
+      LOGICAL,  INTENT(in) :: tefield        ! if .TRUE. a finite electric field
+                                             ! is added to the local potential
+      LOGICAL,  INTENT(in) :: dipfield       ! if .TRUE. the dipole field is subtracted
+      INTEGER,  INTENT(in) :: edir           ! direction of the field
       REAL(DP), INTENT(in) :: emaxpos        ! position of the maximum of the field (0<emaxpos<1)
       REAL(DP), INTENT(in) :: eopreg         ! amplitude of the inverse region (0<eopreg<1)
       REAL(DP), INTENT(in) :: eamp           ! field amplitude (in a.u.) (1 a.u. = 51.44 10^11 V/m)
@@ -1077,7 +1031,7 @@ CONTAINS
       INTEGER,       INTENT(in) :: npwx, nr1, nr2, nr3, ngm, &
                                    nr1s, nr2s, nr3s, ngms, nr1b, nr2b, nr3b
       INTEGER,       INTENT(in) :: igv(:,:)
-      REAL(DP),     INTENT(in) :: ecutwfc, ecutrho
+      REAL(DP),      INTENT(in) :: ecutwfc, ecutrho
       LOGICAL,       INTENT(in) :: gamma_only, lgvec
       CHARACTER(*),  INTENT(in) :: cutoff_units
       !
@@ -1148,7 +1102,7 @@ CONTAINS
       INTEGER,      INTENT(in) :: ik
       INTEGER,      INTENT(in) :: npwk, npwkx
       LOGICAL,      INTENT(in) :: gamma_only
-      REAL(DP),    INTENT(in) :: xk(3)
+      REAL(DP),     INTENT(in) :: xk(3)
       CHARACTER(*), INTENT(in) :: k_units
       LOGICAL,      INTENT(in) :: index(:), igk(:,:)
       !
@@ -1209,12 +1163,12 @@ CONTAINS
       !
       !
       IMPLICIT NONE
-      INTEGER,  INTENT(IN) :: nsp, i_cons
-      REAL(DP), INTENT(IN) :: starting_magnetization(nsp), &
-                              angle1(nsp), angle2(nsp), mcons(3,nsp), &
-                              bfield(3), ef_up, ef_dw, nelup, neldw, lambda
-      LOGICAL,  INTENT(IN) :: two_fermi_energies
-      CHARACTER(*),       INTENT(IN) :: energy_units
+      INTEGER,      INTENT(IN) :: nsp, i_cons
+      REAL(DP),     INTENT(IN) :: starting_magnetization(nsp), &
+                                  angle1(nsp), angle2(nsp), mcons(3,nsp), &
+                                  bfield(3), ef_up, ef_dw, nelup, neldw, lambda
+      LOGICAL,      INTENT(IN) :: two_fermi_energies
+      CHARACTER(*), INTENT(IN) :: energy_units
       !
       INTEGER :: i
       !
@@ -1300,7 +1254,7 @@ CONTAINS
       REAL(DP), OPTIONAL, INTENT(IN) :: Hubbard_U(:), Hubbard_J(:,:), Hubbard_alpha(:), &
                                         Hubbard_J0(:), Hubbard_beta(:)
       INTEGER,  OPTIONAL, INTENT(IN) :: inlc
-      CHARACTER(LEN=*), OPTIONAL,   INTENT(IN) :: vdw_table_name, pseudo_dir, dirname
+      CHARACTER(LEN=*), OPTIONAL, INTENT(IN) :: vdw_table_name, pseudo_dir, dirname
       !
       LOGICAL,  OPTIONAL, INTENT(IN) :: llondon, lxdm, ts_vdw, vdw_isolated
       REAL(DP), OPTIONAL, INTENT(IN) :: london_s6, london_rcut
@@ -1349,12 +1303,11 @@ CONTAINS
       ! Vdw kernel table
       !
       IF ( present(inlc) ) THEN
-         IF ( inlc == 1 .OR. inlc ==2 .OR. inlc == 3 ) THEN
+         IF ( inlc > 0 ) THEN
             IF ( .NOT. PRESENT( vdw_table_name ) .OR. &
-                 .NOT. PRESENT( pseudo_dir ) .OR. &
-                 .NOT. PRESENT( dirname )) &
-               CALL errore( 'write_xc', &
-                            ' variable vdw_table_name not present', 1 )
+                 .NOT. PRESENT( pseudo_dir )     .OR. &
+                 .NOT. PRESENT( dirname ))            &
+                 CALL errore( 'write_xc', ' variable vdw_table_name not present', 1 )
         
             CALL iotk_write_dat( ounit, "NON_LOCAL_DF", inlc )
             CALL iotk_write_dat( ounit, "VDW_KERNEL_NAME", TRIM(vdw_table_name))
@@ -1408,13 +1361,13 @@ CONTAINS
     !------------------------------------------------------------------------
     SUBROUTINE qexml_write_exx( x_gamma_extrapolation, nqx1, nqx2, nqx3, &
                           exxdiv_treatment, yukawa, ecutvcut, exx_fraction, &
-                          gau_parameter, screening_parameter, exx_is_active )
+                          gau_parameter, screening_parameter, exx_is_active, ecutfock )
       !------------------------------------------------------------------------
       !
       LOGICAL,            INTENT(IN) :: x_gamma_extrapolation, exx_is_active
       INTEGER,            INTENT(IN) :: nqx1, nqx2, nqx3
       CHARACTER(LEN=*),   INTENT(IN) :: exxdiv_treatment
-      REAL(DP),           INTENT(IN) :: yukawa, ecutvcut, exx_fraction
+      REAL(DP),           INTENT(IN) :: yukawa, ecutvcut, exx_fraction, ecutfock
       REAL(DP),           INTENT(IN) :: screening_parameter
       REAL(DP),           INTENT(IN) :: gau_parameter
       !
@@ -1430,9 +1383,29 @@ CONTAINS
       call iotk_write_dat(ounit, "screening_parameter", screening_parameter)
       call iotk_write_dat(ounit, "gau_parameter", gau_parameter)
       call iotk_write_dat(ounit, "exx_is_active", exx_is_active)
+      call iotk_write_dat(ounit, "ecutfock", ecutfock)
       CALL iotk_write_end(ounit, "EXACT_EXCHANGE" )
       !
     END SUBROUTINE qexml_write_exx
+    !
+    !
+    !------------------------------------------------------------------------
+    SUBROUTINE qexml_write_esm( esm_nfit, esm_efield, esm_w, esm_a, esm_bc )
+      !------------------------------------------------------------------------
+      !
+      INTEGER,            INTENT(IN) :: esm_nfit
+      REAL(DP),           INTENT(IN) :: esm_efield, esm_w, esm_a
+      CHARACTER(LEN=*),   INTENT(IN) :: esm_bc
+      !
+      CALL iotk_write_begin(ounit, "ESM" )
+      call iotk_write_dat(ounit, "esm_nfit", esm_nfit)
+      call iotk_write_dat(ounit, "esm_efield", esm_efield)
+      call iotk_write_dat(ounit, "esm_w", esm_w)
+      call iotk_write_dat(ounit, "esm_a", esm_a)
+      call iotk_write_dat(ounit, "esm_bc", esm_bc)
+      CALL iotk_write_end(ounit, "ESM" )
+      !
+    END SUBROUTINE qexml_write_esm
     !
     !
     !------------------------------------------------------------------------
@@ -1443,7 +1416,7 @@ CONTAINS
       LOGICAL,                INTENT(in) :: lgauss, ltetra, tfixed_occ, lsda
       INTEGER,      OPTIONAL, INTENT(in) :: ngauss, ntetra, nstates_up, nstates_dw
       INTEGER,      OPTIONAL, INTENT(in) :: tetra(:,:)
-      REAL(DP),    OPTIONAL, INTENT(in) :: degauss, input_occ(:,:)
+      REAL(DP),     OPTIONAL, INTENT(in) :: degauss, input_occ(:,:)
       CHARACTER(*), OPTIONAL, INTENT(in) :: degauss_units
       !
       INTEGER :: i
@@ -1507,10 +1480,10 @@ CONTAINS
       !------------------------------------------------------------------------
       !
       INTEGER,      INTENT(in) :: num_k_points, k1, k2, k3, nk1, nk2, nk3
-      REAL(DP),    INTENT(in) :: xk(:,:), wk(:)
+      REAL(DP),     INTENT(in) :: xk(:,:), wk(:)
       CHARACTER(*), INTENT(in) :: k_units
-      REAL(DP), INTENT(IN) :: qnorm
-      INTEGER,  INTENT(IN), OPTIONAL ::  nks_start
+      REAL(DP),     INTENT(IN) :: qnorm
+      INTEGER,  INTENT(IN), OPTIONAL :: nks_start
       REAL(DP), INTENT(IN), OPTIONAL :: xk_start(:,:), wk_start(:)
       !
       INTEGER :: ik
@@ -1570,11 +1543,11 @@ CONTAINS
     !
     !------------------------------------------------------------------------
     SUBROUTINE qexml_write_para( kunit, nproc, nproc_pool, nproc_image, &
-                    ntask_groups, nproc_pot, nproc_bgrp, nproc_ortho ) 
+                    ntask_groups, nproc_bgrp, nproc_ortho ) 
       !------------------------------------------------------------------------
       !
       INTEGER,  INTENT(IN) :: kunit, nproc, nproc_pool, nproc_image, &
-                              ntask_groups, nproc_pot, nproc_bgrp, nproc_ortho 
+                              ntask_groups, nproc_bgrp, nproc_ortho 
       !
       !
       CALL iotk_write_begin( ounit, "PARALLELISM" )
@@ -1587,8 +1560,6 @@ CONTAINS
                               "NUMBER_OF_PROCESSORS_PER_IMAGE", nproc_image )
       CALL iotk_write_dat( ounit, "NUMBER_OF_PROCESSORS_PER_TASKGROUP", &
                                               ntask_groups )
-      CALL iotk_write_dat( ounit, "NUMBER_OF_PROCESSORS_PER_POT", &
-                                              nproc_pot )
       CALL iotk_write_dat( ounit, "NUMBER_OF_PROCESSORS_PER_BAND_GROUP", &
                                               nproc_bgrp )
       CALL iotk_write_dat( ounit, "NUMBER_OF_PROCESSORS_PER_DIAGONALIZATION", &
@@ -1607,12 +1578,12 @@ CONTAINS
                                        ef_up, ef_down, noncolin )
       !------------------------------------------------------------------------
       !
-      INTEGER,       INTENT(in) ::  num_k_points, natomwfc, nbnd, nbnd_up, nbnd_down, &
-                                    nspin, nel_up, nel_down
-      REAL(DP),     INTENT(in) ::   nelec
+      INTEGER,       INTENT(in) :: num_k_points, natomwfc, nbnd, nbnd_up, nbnd_down, &
+                                   nspin, nel_up, nel_down
+      REAL(DP),      INTENT(in) :: nelec
       CHARACTER(*),  INTENT(in) :: energy_units, k_units
       LOGICAL,       INTENT(in), OPTIONAL :: noncolin,two_fermi_energies
-      REAL(DP),     INTENT(in), OPTIONAL :: ef,ef_up,ef_down
+      REAL(DP),      INTENT(in), OPTIONAL :: ef,ef_up,ef_down
       !
       !
       CALL iotk_write_begin( ounit, "BAND_STRUCTURE_INFO" )
@@ -1680,10 +1651,10 @@ CONTAINS
     SUBROUTINE qexml_write_bands_pw( nbnd, num_k_points, nspin, xk, wk, wg , et, energy_units,  lkpoint_dir ,auxunit, dirname )
       !------------------------------------------------------------------------
       !
-      INTEGER, INTENT(in) :: nbnd,num_k_points,nspin,auxunit
-      REAL(DP), INTENT(in) :: xk(:,:),wk(:),wg(:,:),et(:,:)
-      CHARACTER(*), INTENT(IN) :: energy_units
-      LOGICAL, INTENT(in) :: lkpoint_dir
+      INTEGER,          INTENT(in) :: nbnd,num_k_points,nspin,auxunit
+      REAL(DP),         INTENT(in) :: xk(:,:),wk(:),wg(:,:),et(:,:)
+      CHARACTER(len=*), INTENT(IN) :: energy_units
+      LOGICAL,          INTENT(in) :: lkpoint_dir
       CHARACTER(len=*), INTENT(in) :: dirname
       
       !
@@ -1847,18 +1818,18 @@ CONTAINS
       !------------------------------------------------------------------------
       !
       !
-      INTEGER, INTENT(in) :: nbnd,num_k_points,nspin, iupdwn(2),nupdwn(2),auxunit
+      INTEGER,  INTENT(in) :: nbnd,num_k_points,nspin, iupdwn(2),nupdwn(2),auxunit
       REAL(DP), INTENT(in) :: xk(:,:),wk(:),et(:,:)
       CHARACTER(len=*), INTENT(in) :: dirname,k_units,energy_units
-      LOGICAL, INTENT(in) :: tksw
+      LOGICAL,  INTENT(in) :: tksw
       REAL(DP), INTENT(in) :: occ0(:)
       REAL(DP), INTENT(in) :: occm(:)
       !
       !
       REAL(DP), ALLOCATABLE :: dtmp(:)
-      INTEGER :: iss, ik
-      CHARACTER(LEN=4)     :: cspin
-      CHARACTER(LEN=256)    :: filename
+      INTEGER            :: iss, ik
+      CHARACTER(LEN=4)   :: cspin
+      CHARACTER(LEN=256) :: filename
       !
       !
       CALL iotk_write_begin( ounit, "EIGENVALUES" )
@@ -1985,9 +1956,9 @@ CONTAINS
       INTEGER,                INTENT(in) :: ngw, igwx
       LOGICAL,                INTENT(in) :: gamma_only
       INTEGER,      OPTIONAL, INTENT(in) :: igk(:)
-      COMPLEX(DP), OPTIONAL, INTENT(in) :: wf(:,:)
-      COMPLEX(DP), OPTIONAL, INTENT(in) :: wf_kindip(:,:)
-      REAL(DP),    OPTIONAL, INTENT(in) :: scale_factor
+      COMPLEX(DP),  OPTIONAL, INTENT(in) :: wf(:,:)
+      COMPLEX(DP),  OPTIONAL, INTENT(in) :: wf_kindip(:,:)
+      REAL(DP),     OPTIONAL, INTENT(in) :: scale_factor
       !
       INTEGER         :: iunaux, ierr
       INTEGER         :: ig, ib
@@ -2095,7 +2066,7 @@ CONTAINS
       !
       INTEGER,             INTENT(in) :: nr1, nr2, nr3
       INTEGER,   OPTIONAL, INTENT(in) :: nr1x, nr2x
-      REAL(DP), OPTIONAL, INTENT(in) :: rho(:,:,:), rhov(:)
+      REAL(DP),  OPTIONAL, INTENT(in) :: rho(:,:,:), rhov(:)
       LOGICAL,   OPTIONAL, INTENT(in) :: binary
       !
       INTEGER        :: iunaux, nr1x_, nr2x_, ip, i1, i2, i
@@ -2250,10 +2221,10 @@ CONTAINS
                                   energy_units, found, ierr )
       !------------------------------------------------------------------------
       !
-      INTEGER, OPTIONAL, INTENT(OUT) :: nfi
+      INTEGER,  OPTIONAL, INTENT(OUT) :: nfi
       REAL(DP), OPTIONAL, INTENT(OUT) :: simtime, ekin,eht,esr,eself,epseu,enl,exc,vave,enthal
       CHARACTER(len=*), OPTIONAL, INTENT(OUT) :: time_units, title, energy_units
-      LOGICAL,INTENT(OUT) :: found
+      LOGICAL, INTENT(OUT) :: found
       INTEGER, INTENT(OUT) :: ierr
       !
       INTEGER :: nfi_
@@ -2336,9 +2307,9 @@ CONTAINS
       !------------------------------------------------------------------------
       !
       CHARACTER(len=*),  OPTIONAL, INTENT(out) :: bravais_lattice
-      REAL(DP),         OPTIONAL, INTENT(out) :: celldm(6), alat
-      REAL(DP),         OPTIONAL, INTENT(out) :: a1(3), a2(3), a3(3)
-      REAL(DP),         OPTIONAL, INTENT(out) :: b1(3), b2(3), b3(3)
+      REAL(DP),          OPTIONAL, INTENT(out) :: celldm(6), alat
+      REAL(DP),          OPTIONAL, INTENT(out) :: a1(3), a2(3), a3(3)
+      REAL(DP),          OPTIONAL, INTENT(out) :: b1(3), b2(3), b3(3)
       CHARACTER(len=*),  OPTIONAL, INTENT(out) :: alat_units, a_units, b_units
       CHARACTER(len=*),  OPTIONAL, INTENT(out) :: es_corr
       INTEGER,                     INTENT(out) :: ierr
@@ -2937,7 +2908,7 @@ CONTAINS
     !------------------------------------------------------------------------
     SUBROUTINE qexml_read_exx( x_gamma_extrapolation, nqx1, nqx2, nqx3, &
                           exxdiv_treatment, yukawa, ecutvcut, exx_fraction, &
-                          screening_parameter, gau_parameter, exx_is_active,&
+                          screening_parameter, gau_parameter, exx_is_active, ecutfock, &
                           found, ierr )
       !----------------------------------------------------------------------
       !
@@ -2947,7 +2918,7 @@ CONTAINS
       INTEGER,          OPTIONAL, INTENT(OUT) :: nqx1, nqx2, nqx3
       CHARACTER(LEN=*), OPTIONAL, INTENT(OUT) :: exxdiv_treatment
       REAL(DP),         OPTIONAL, INTENT(OUT) :: yukawa, ecutvcut, exx_fraction
-      REAL(DP),         OPTIONAL, INTENT(OUT) :: screening_parameter
+      REAL(DP),         OPTIONAL, INTENT(OUT) :: screening_parameter, ecutfock
       REAL(DP),         OPTIONAL, INTENT(OUT) :: gau_parameter
       LOGICAL,                    INTENT(out) :: found
       INTEGER,                    INTENT(out) :: ierr
@@ -2955,7 +2926,7 @@ CONTAINS
       LOGICAL  :: x_gamma_extrapolation_, exx_is_active_
       INTEGER  :: nqx1_, nqx2_, nqx3_
       REAL(DP) :: yukawa_, ecutvcut_, exx_fraction_
-      REAL(DP) :: screening_parameter_
+      REAL(DP) :: screening_parameter_, ecutfock_
       REAL(DP) :: gau_parameter_
       CHARACTER(LEN=80) :: exxdiv_treatment_
       !
@@ -2994,9 +2965,15 @@ CONTAINS
       !
       ! Check if existing, for back-compatibility
       call iotk_scan_dat(iunit, "gau_parameter", gau_parameter_, FOUND=found, IERR=ierr)
+      IF ( .NOT. found )  gau_parameter_=0.0_dp
       IF ( ierr /= 0 ) RETURN
       !
       call iotk_scan_dat(iunit, "exx_is_active", exx_is_active_, IERR=ierr)
+      IF ( ierr /= 0 ) RETURN
+      !
+      ! Check if existing, for back-compatibility
+      call iotk_scan_dat(iunit, "ecutfock", ecutfock_, IERR=ierr, FOUND=found)
+      IF ( .NOT. found )  ecutfock_=-1.0_dp
       IF ( ierr /= 0 ) RETURN
       !
       CALL iotk_scan_end(iunit, "EXACT_EXCHANGE", IERR=ierr)
@@ -3012,13 +2989,62 @@ CONTAINS
       IF ( present(ecutvcut) )                           ecutvcut = ecutvcut_
       IF ( present(exx_fraction) )                   exx_fraction = exx_fraction_
       IF ( present(screening_parameter) )     screening_parameter = screening_parameter_
-      ! Check if found, for back-compatibility
-      IF ( present(gau_parameter) .AND. found )     gau_parameter = gau_parameter_
+      IF ( present(ecutfock) )                           ecutfock = ecutfock_
+      IF ( present(gau_parameter) )                 gau_parameter = gau_parameter_
       IF ( present(exx_is_active) )                 exx_is_active = exx_is_active_
       !
       found = .TRUE.
       !
     END SUBROUTINE qexml_read_exx
+    !
+    !
+    !------------------------------------------------------------------------
+    SUBROUTINE qexml_read_esm( esm_nfit, esm_efield, esm_w, esm_a, esm_bc, ierr )
+      !----------------------------------------------------------------------
+      !
+      IMPLICIT NONE
+      !
+      INTEGER,          OPTIONAL, INTENT(OUT) :: esm_nfit
+      REAL(DP),         OPTIONAL, INTENT(OUT) :: esm_efield, esm_w, esm_a
+      CHARACTER(LEN=*), OPTIONAL, INTENT(OUT) :: esm_bc
+      INTEGER,                    INTENT(out) :: ierr
+      !
+      INTEGER  :: esm_nfit_
+      REAL(DP) :: esm_efield_, esm_w_, esm_a_
+      CHARACTER(LEN=3) :: esm_bc_
+      !
+      !
+      ierr = 0
+      !
+      CALL iotk_scan_begin( iunit, "ESM", IERR=ierr )
+      IF ( ierr /= 0 ) RETURN
+      !
+      call iotk_scan_dat(iunit, "esm_nfit", esm_nfit_, IERR=ierr)
+      IF ( ierr /= 0 ) RETURN
+      !
+      call iotk_scan_dat(iunit, "esm_efield", esm_efield_, IERR=ierr)
+      IF ( ierr /= 0 ) RETURN
+      !
+      call iotk_scan_dat(iunit, "esm_w", esm_w_, IERR=ierr)
+      IF ( ierr /= 0 ) RETURN
+      !
+      call iotk_scan_dat(iunit, "esm_a", esm_a_, IERR=ierr)
+      IF ( ierr /= 0 ) RETURN
+      !
+      call iotk_scan_dat(iunit, "esm_bc", esm_bc_, IERR=ierr)
+      IF ( ierr /= 0 ) RETURN
+      !
+      CALL iotk_scan_end(iunit, "ESM", IERR=ierr)
+      IF ( ierr /= 0 ) RETURN
+      !
+      !
+      IF ( present(esm_nfit) )    esm_nfit    = esm_nfit_
+      IF ( present(esm_efield) )  esm_efield  = esm_efield_
+      IF ( present(esm_w) )       esm_w       = esm_w_
+      IF ( present(esm_a) )       esm_a       = esm_a_
+      IF ( present(esm_bc) )      esm_bc      = esm_bc_
+      !
+    END SUBROUTINE qexml_read_esm
     !
     !
     !------------------------------------------------------------------------
@@ -3152,10 +3178,10 @@ CONTAINS
       INTEGER,                INTENT(out) :: ierr
       !
       CHARACTER(256) :: filename, k_units_
-      INTEGER   :: npwk_, npwkx_
-      LOGICAL   :: gamma_only_
+      INTEGER  :: npwk_, npwkx_
+      LOGICAL  :: gamma_only_
       REAL(DP) :: xk_(3)
-      INTEGER   :: iunaux
+      INTEGER  :: iunaux
       !
 
       ierr = 0
@@ -3296,8 +3322,8 @@ CONTAINS
       INTEGER,          OPTIONAL, INTENT(out) :: inlc
       CHARACTER(LEN=*), OPTIONAL, INTENT(out) :: U_projection
       CHARACTER(LEN=*), OPTIONAL, INTENT(out) :: vdw_table_name
-      LOGICAL,  OPTIONAL, INTENT(out) :: llondon, lxdm, ts_vdw, vdw_isolated
-      REAL(DP), OPTIONAL, INTENT(out) :: london_s6, london_rcut
+      LOGICAL,          OPTIONAL, INTENT(out) :: llondon, lxdm, ts_vdw, vdw_isolated
+      REAL(DP),         OPTIONAL, INTENT(out) :: london_s6, london_rcut
       !
       INTEGER,                    INTENT(out) :: ierr
       !
@@ -3308,7 +3334,7 @@ CONTAINS
       REAL(DP),   ALLOCATABLE :: Hubbard_U_(:), Hubbard_J_(:,:)
       REAL(DP),   ALLOCATABLE :: Hubbard_alpha_(:), Hubbard_J0_(:), Hubbard_beta_(:)
       LOGICAL                 :: llondon_, lxdm_, ts_vdw_, vdw_isolated_
-      REAL(DP)                :: london_s6_, london_rcut_
+      REAL(DP)                :: london_s6_=0._dp, london_rcut_=0._dp
       !
       ierr = 0
       !
@@ -3380,8 +3406,7 @@ CONTAINS
       CALL iotk_scan_dat( iunit, "NON_LOCAL_DF", inlc_, FOUND = found )
       IF ( found ) THEN
          !
-         IF ( inlc_ == 1 .OR. inlc_ == 2 .OR. inlc_ == 3 ) &
-            CALL iotk_scan_dat( iunit, "VDW_KERNEL_NAME", vdw_table_name_ )
+         IF ( inlc_ > 0 ) CALL iotk_scan_dat( iunit, "VDW_KERNEL_NAME", vdw_table_name_ )
          !
       ELSE
          !
@@ -3473,7 +3498,7 @@ CONTAINS
       LOGICAL        :: lgauss_, ltetra_, tfixed_occ_
       INTEGER        :: ngauss_, ntetra_, nstates_up_, nstates_dw_
       LOGICAL        :: lsda_
-      REAL(DP)      :: degauss_
+      REAL(DP)       :: degauss_
       CHARACTER(256) :: degauss_units_
       INTEGER,  ALLOCATABLE :: tetra_(:,:)
       INTEGER :: i
@@ -3614,8 +3639,8 @@ CONTAINS
       !
       INTEGER,       OPTIONAL, INTENT(out) :: num_k_points, k1, k2, k3, nk1, nk2, nk3, &
                                               nks_start
-      REAL(DP),     OPTIONAL, INTENT(out) :: xk(:,:), wk(:), qnorm
-      REAL(DP),     OPTIONAL, ALLOCATABLE, INTENT(out) :: xk_start(:,:), wk_start(:)
+      REAL(DP),      OPTIONAL, INTENT(out) :: xk(:,:), wk(:), qnorm
+      REAL(DP),      OPTIONAL, ALLOCATABLE, INTENT(out) :: xk_start(:,:), wk_start(:)
       CHARACTER(*),  OPTIONAL, INTENT(out) :: k_units
       INTEGER,                 INTENT(out) :: ierr
       !
@@ -3750,16 +3775,16 @@ CONTAINS
     !
     !------------------------------------------------------------------------
     SUBROUTINE qexml_read_para( kunit, nproc, nproc_pool, nproc_image, &
-                    ntask_groups, nproc_pot, nproc_bgrp, nproc_ortho, found, ierr )
+                    ntask_groups, nproc_bgrp, nproc_ortho, found, ierr )
       !------------------------------------------------------------------------
       !
       INTEGER, OPTIONAL, INTENT(OUT) :: kunit, nproc, nproc_pool, nproc_image, &
-           ntask_groups, nproc_pot, nproc_bgrp, nproc_ortho
+                                        ntask_groups, nproc_bgrp, nproc_ortho
       LOGICAL, INTENT(OUT) :: found
       INTEGER, INTENT(OUT) :: ierr
       !
       INTEGER :: kunit_, nproc_, nproc_pool_, nproc_image_, ntask_groups_, &
-           nproc_pot_, nproc_bgrp_, nproc_ortho_
+           nproc_bgrp_, nproc_ortho_
       !
       LOGICAL :: found2
       !
@@ -3785,10 +3810,6 @@ CONTAINS
                                               ntask_groups_, FOUND=found2 )
       IF ( .NOT. found2) ntask_groups_=1 ! compatibility
       !
-      CALL iotk_scan_dat( iunit, "NUMBER_OF_PROCESSORS_PER_POT", &
-                                              nproc_pot_, FOUND=found2 )
-      IF ( .NOT. found2) nproc_pot_=1 ! compatibility
-      !
       CALL iotk_scan_dat( iunit, "NUMBER_OF_PROCESSORS_PER_BAND_GROUP", &
                                               nproc_bgrp_, FOUND=found2 )
       IF ( .NOT. found2) nproc_bgrp_=1 ! compatibility
@@ -3805,7 +3826,6 @@ CONTAINS
       IF (present(nproc_pool)) nproc_pool = nproc_pool_
       IF (present(nproc_image)) nproc_image = nproc_image_
       IF (present(ntask_groups)) ntask_groups = ntask_groups_
-      IF (present(nproc_pot)) nproc_pot = nproc_pot_
       IF (present(nproc_bgrp)) nproc_bgrp = nproc_bgrp_
       IF (present(nproc_ortho)) nproc_ortho = nproc_ortho_
       !
@@ -3817,7 +3837,7 @@ CONTAINS
       !------------------------------------------------------------------------
       !
       INTEGER,       OPTIONAL, INTENT(out) :: modenum
-      REAL(DP),     OPTIONAL, INTENT(out) :: xqq(:)
+      REAL(DP),      OPTIONAL, INTENT(out) :: xqq(:)
       CHARACTER(*),  OPTIONAL, INTENT(out) :: q_units
       INTEGER,                 INTENT(out) :: ierr
       !
@@ -4125,7 +4145,7 @@ CONTAINS
       REAL(DP), INTENT(OUT) :: occ0(:)
       REAL(DP), INTENT(OUT) :: occm(:)
       !
-      INTEGER, INTENT(in)  :: num_k_points, nspin, nbnd_tot, nudx
+      INTEGER,  INTENT(in)  :: num_k_points, nspin, nbnd_tot, nudx
       INTEGER,               INTENT(IN) :: iupdwn(:)
       INTEGER,               INTENT(IN) :: nupdwn(:)
       !
@@ -4225,7 +4245,7 @@ CONTAINS
       INTEGER,       OPTIONAL, INTENT(in)  :: igk(:)
       INTEGER,       OPTIONAL, INTENT(out) :: ngw, igwx
       LOGICAL,       OPTIONAL, INTENT(out) :: gamma_only
-      COMPLEX(DP),  OPTIONAL, INTENT(out) :: wf(:,:), wf_kindip(:,:)
+      COMPLEX(DP),   OPTIONAL, INTENT(out) :: wf(:,:), wf_kindip(:,:)
       INTEGER,                 INTENT(out) :: ierr
       !
       INTEGER :: iunaux
@@ -4377,7 +4397,7 @@ CONTAINS
       !
       INTEGER,   OPTIONAL, INTENT(out) :: nr1, nr2, nr3
       INTEGER,   OPTIONAL, INTENT(in)  :: ip
-      REAL(DP), OPTIONAL, INTENT(out) :: rho(:,:,:), rhoz(:)
+      REAL(DP),  OPTIONAL, INTENT(out) :: rho(:,:,:), rhoz(:)
       INTEGER,             INTENT(out) :: ierr
       !
       INTEGER        :: nr1_, nr2_, nr3_, ip_

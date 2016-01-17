@@ -123,10 +123,11 @@ plus_u_setup.o : ../../Modules/uspp.o
 plus_u_setup.o : ../../PW/src/ldaU.o
 plus_u_setup.o : ../../PW/src/scf_mod.o
 plus_u_setup.o : condcom.o
+poten.o : ../../FFTXlib/fft_scalar.o
+poten.o : ../../FFTXlib/scatter_mod.o
 poten.o : ../../Modules/cell_base.o
 poten.o : ../../Modules/constants.o
 poten.o : ../../Modules/fft_base.o
-poten.o : ../../Modules/fft_scalar.o
 poten.o : ../../Modules/io_global.o
 poten.o : ../../Modules/mp.o
 poten.o : ../../Modules/mp_world.o
@@ -140,6 +141,7 @@ realus_scatt.o : ../../Modules/cell_base.o
 realus_scatt.o : ../../Modules/constants.o
 realus_scatt.o : ../../Modules/fft_base.o
 realus_scatt.o : ../../Modules/ions_base.o
+realus_scatt.o : ../../Modules/kind.o
 realus_scatt.o : ../../Modules/mp_global.o
 realus_scatt.o : ../../Modules/noncol.o
 realus_scatt.o : ../../Modules/uspp.o
@@ -160,10 +162,11 @@ save_cond.o : ../../Modules/parameters.o
 save_cond.o : ../../Modules/radial_grids.o
 save_cond.o : ../../PW/src/pwcom.o
 save_cond.o : condcom.o
+scat_states_plot.o : ../../FFTXlib/fft_scalar.o
+scat_states_plot.o : ../../FFTXlib/scatter_mod.o
 scat_states_plot.o : ../../Modules/cell_base.o
 scat_states_plot.o : ../../Modules/constants.o
 scat_states_plot.o : ../../Modules/fft_base.o
-scat_states_plot.o : ../../Modules/fft_scalar.o
 scat_states_plot.o : ../../Modules/io_global.o
 scat_states_plot.o : ../../Modules/ions_base.o
 scat_states_plot.o : ../../Modules/kind.o

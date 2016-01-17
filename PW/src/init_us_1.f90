@@ -64,7 +64,7 @@ subroutine init_us_1
   ! interpolated value
   ! J=L+S (noninteger!)
   integer :: n1, m0, m1, n, li, mi, vi, vj, ijs, is1, is2, &
-             lk, mk, vk, kh, lh
+             lk, mk, vk, kh, lh, ijkb0
   integer, external :: sph_ind
   complex(DP) :: coeff, qgm(1)
   real(DP) :: spinor, ji, jk
@@ -125,6 +125,7 @@ subroutine init_us_1
   !   nhtoj, indv, and if the pseudopotential is of KB type we initialize the
   !   atomic D terms
   !
+  ijkb0 = 0
   do nt = 1, ntyp
      ih = 1
      do nb = 1, upf(nt)%nbeta
@@ -163,9 +164,11 @@ subroutine init_us_1
      ! ijkb0 is just before the first beta "in the solid" for atom ia
      ! i.e. ijkb0+1,.. ijkb0+nh(ityp(ia)) are the nh beta functions of
      !      atom ia in the global list of beta functions
-     indv_ijkb0(1) = 0
-     do ia = 2,nat
-       indv_ijkb0(ia) = indv_ijkb0(ia-1)+nh(ityp(ia-1))
+     do ia = 1,nat
+       IF ( ityp(ia) == nt ) THEN
+          indv_ijkb0(ia) = ijkb0
+          ijkb0 = ijkb0 + nh(nt)
+        END IF
      enddo
      !
      !    From now on the only difference between KB and US pseudopotentials
@@ -277,9 +280,8 @@ subroutine init_us_1
                     endif
                     enddo
                     if ( upf(nt)%rinner (l+1) > 0.0_dp) &
-                        call setqf(upf(nt)%qfcoef (1, l+1, nb, mb), &
-                                qtot(1,ijv), rgrid(nt)%r, upf(nt)%nqf, &
-                                l, ilast)
+                        call setqfnew( upf(nt)%nqf,upf(nt)%qfcoef(1,l+1,nb,mb),&
+                                ilast, rgrid(nt)%r, l, 2, qtot(1,ijv) )
                  endif paw
               endif respect_sum_rule
               enddo ! mb
@@ -384,6 +386,7 @@ subroutine init_us_1
   call divide (intra_bgrp_comm, nqx, startq, lastq)
   tab (:,:,:) = 0.d0
   do nt = 1, ntyp
+     if ( upf(nt)%is_gth ) cycle
      do nb = 1, upf(nt)%nbeta
         l = upf(nt)%lll (nb)
         do iq = startq, lastq

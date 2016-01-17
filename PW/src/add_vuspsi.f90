@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2003 PWSCF group
+! Copyright (C) 2001-2015 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -26,8 +26,8 @@ SUBROUTINE add_vuspsi( lda, n, m, hpsi )
   USE lsda_mod,      ONLY: current_spin
   USE control_flags, ONLY: gamma_only
   USE noncollin_module
-  USE uspp,          ONLY: vkb, nkb, deeq, deeq_nc
-  USE uspp_param,    ONLY: nh
+  USE uspp,          ONLY: vkb, nkb, deeq, deeq_nc, indv_ijkb0
+  USE uspp_param,    ONLY: nh, nhm
   USE becmod,        ONLY: bec_type, becp
   !
   IMPLICIT NONE
@@ -39,7 +39,7 @@ SUBROUTINE add_vuspsi( lda, n, m, hpsi )
   !
   ! ... here the local variables
   !
-  INTEGER :: jkb, ikb, ih, jh, na, nt, ijkb0, ibnd
+  INTEGER :: jkb, ikb, ih, jh, na, nt, ibnd
     ! counters
   !
   !
@@ -79,13 +79,17 @@ SUBROUTINE add_vuspsi( lda, n, m, hpsi )
        !
        IF ( nkb == 0 ) RETURN
        !
-       m_loc   = m
-       m_begin = 1
-       m_max   = m
-       nproc   = 1
-       mype    = 0
-       !
-       IF( becp%comm /= mp_get_comm_null() ) THEN
+       IF( becp%comm == mp_get_comm_null() ) THEN
+          nproc   = 1
+          mype    = 0
+          m_loc   = m
+          m_begin = 1
+          m_max   = m
+       ELSE
+          !
+          ! becp(l,i) = <beta_l|psi_i>, with vkb(n,l)=|beta_l>
+          ! in this case becp(l,i) are distributed (index i is)
+          !
           nproc   = becp%nproc
           mype    = becp%mype
           m_loc   = becp%nbnd_loc
@@ -96,38 +100,29 @@ SUBROUTINE add_vuspsi( lda, n, m, hpsi )
        !
        ALLOCATE (ps (nkb,m_max), STAT=ierr )
        IF( ierr /= 0 ) &
-          CALL errore( ' add_vuspsi_gamma ', ' cannot allocate ps ', ABS( ierr ) )
+          CALL errore( ' add_vuspsi_gamma ', ' cannot allocate ps ', ABS(ierr) )
        !
        ps(:,:) = 0.D0
        !
-       ijkb0 = 0
+       !   In becp=<vkb_i|psi_j> terms corresponding to atom na of type nt
+       !   run from index i=indv_ijkb0(na)+1 to i=indv_ijkb0(na)+nh(nt)
        !
        DO nt = 1, ntyp
           !
+          IF ( nh(nt) == 0 ) CYCLE
           DO na = 1, nat
              !
              IF ( ityp(na) == nt ) THEN
                 !
-                DO ibnd = 1, m_loc
-                   !
-                   DO jh = 1, nh(nt)
-                      !
-                      jkb = ijkb0 + jh
-                      !
-                      DO ih = 1, nh(nt)
-                         !
-                         ikb = ijkb0 + ih
-                         !
-                         ps(ikb,ibnd) = ps(ikb,ibnd) + &
-                              deeq(ih,jh,na,current_spin) * becp%r(jkb,ibnd)
-                         !
-                      END DO
-                      !
-                   END DO
-                   !
-                END DO
+                ! Next operation computes ps(l',i) = \sum_m deeq(l,m) becp(m',i)
+                ! (l'=l+ijkb0, m'=m+ijkb0, indices run from 1 to nh(nt))
                 !
-                ijkb0 = ijkb0 + nh(nt)
+                IF ( m_loc > 0 ) THEN
+                  CALL DGEMM('N', 'N', nh(nt), m_loc, nh(nt), 1.0_dp, &
+                           deeq(1,1,na,current_spin), nhm, &
+                           becp%r(indv_ijkb0(na)+1,1), nkb, 0.0_dp, &
+                               ps(indv_ijkb0(na)+1,1), nkb )
+                END IF
                 !
              END IF
              !
@@ -135,7 +130,14 @@ SUBROUTINE add_vuspsi( lda, n, m, hpsi )
           !
        END DO
        !
-       IF( becp%comm /= mp_get_comm_null() ) THEN
+       IF( becp%comm == mp_get_comm_null() ) THEN
+          !
+          ! Normal case: hpsi(n,i) = \sum_l beta(n,l) ps(l,i) 
+          ! (l runs from 1 to nkb)
+          !
+          CALL DGEMM( 'N', 'N', ( 2 * n ), m, nkb, 1.D0, vkb, &
+                   ( 2 * lda ), ps, nkb, 1.D0, hpsi, ( 2 * lda ) )
+       ELSE
           !
           ! parallel block multiplication of vkb and ps
           !
@@ -161,9 +163,6 @@ SUBROUTINE add_vuspsi( lda, n, m, hpsi )
              IF( icur_blk == nproc ) icur_blk = 0
 
           END DO
-       ELSE
-          CALL DGEMM( 'N', 'N', ( 2 * n ), m, nkb, 1.D0, vkb, &
-                   ( 2 * lda ), ps, nkb, 1.D0, hpsi, ( 2 * lda ) )
        END IF
        !
        DEALLOCATE (ps)
@@ -176,8 +175,10 @@ SUBROUTINE add_vuspsi( lda, n, m, hpsi )
      SUBROUTINE add_vuspsi_k()
        !-----------------------------------------------------------------------
        !
+       ! see add_vuspsi_gamma for comments
+       !
        IMPLICIT NONE
-       COMPLEX(DP), ALLOCATABLE :: ps (:,:)
+       COMPLEX(DP), ALLOCATABLE :: ps (:,:), deeaux (:,:)
        INTEGER :: ierr
        !
        IF ( nkb == 0 ) RETURN
@@ -187,38 +188,27 @@ SUBROUTINE add_vuspsi( lda, n, m, hpsi )
           CALL errore( ' add_vuspsi_k ', ' cannot allocate ps ', ABS( ierr ) )
        ps(:,:) = ( 0.D0, 0.D0 )
        !
-       ijkb0 = 0
-       !
        DO nt = 1, ntyp
           !
+          IF ( nh(nt) == 0 ) CYCLE
+          ALLOCATE ( deeaux(nh(nt),nh(nt)) )
           DO na = 1, nat
              !
              IF ( ityp(na) == nt ) THEN
                 !
-                DO ibnd = 1, m
-                   !
-                   DO jh = 1, nh(nt)
-                      !
-                      jkb = ijkb0 + jh
-                      !
-                      DO ih = 1, nh(nt)
-                         !
-                         ikb = ijkb0 + ih
-                         !
-                         ps(ikb,ibnd) = ps(ikb,ibnd) + &
-                              deeq(ih,jh,na,current_spin) * becp%k(jkb,ibnd)
-                         !
-                      END DO
-                      !
-                   END DO
-                   !
-                END DO
+                ! deeq is real: copy it into a complex variable to perform
+                ! a zgemm - simple but sub-optimal solution
                 !
-                ijkb0 = ijkb0 + nh(nt)
+                deeaux(:,:) = CMPLX(deeq(1:nh(nt),1:nh(nt),na,current_spin),&
+                                    0.0_dp, KIND=dp )
+                CALL ZGEMM('N','N', nh(nt), m, nh(nt), (1.0_dp,0.0_dp), &
+                           deeaux, nh(nt), becp%k(indv_ijkb0(na)+1,1), nkb, &
+                          (0.0_dp, 0.0_dp), ps(indv_ijkb0(na)+1,1), nkb )
                 !
              END IF
              !
           END DO
+          DEALLOCATE (deeaux)
           !
        END DO
        !
@@ -234,11 +224,11 @@ SUBROUTINE add_vuspsi( lda, n, m, hpsi )
      !-----------------------------------------------------------------------
      SUBROUTINE add_vuspsi_nc()
        !-----------------------------------------------------------------------
-       !
+       ! see add_vuspsi_k for comments
        !
        IMPLICIT NONE
        COMPLEX(DP), ALLOCATABLE :: ps (:,:,:)
-       INTEGER :: ierr
+       INTEGER :: ierr, ijkb0
        !
        IF ( nkb == 0 ) RETURN
        !
@@ -248,10 +238,9 @@ SUBROUTINE add_vuspsi( lda, n, m, hpsi )
        !
        ps (:,:,:) = (0.d0, 0.d0)
        !
-       ijkb0 = 0
-       !
        DO nt = 1, ntyp
           !
+          IF ( nh(nt) == 0 ) CYCLE
           DO na = 1, nat
              !
              IF ( ityp(na) == nt ) THEN
@@ -260,11 +249,11 @@ SUBROUTINE add_vuspsi( lda, n, m, hpsi )
                    !
                    DO jh = 1, nh(nt)
                       !
-                      jkb = ijkb0 + jh
+                      jkb = indv_ijkb0(na) + jh
                       !
                       DO ih = 1, nh(nt)
                          !
-                         ikb = ijkb0 + ih
+                         ikb = indv_ijkb0(na) + ih
                          !
                          ps(ikb,1,ibnd) = ps(ikb,1,ibnd) +    & 
                               deeq_nc(ih,jh,na,1)*becp%nc(jkb,1,ibnd)+ & 
@@ -278,8 +267,6 @@ SUBROUTINE add_vuspsi( lda, n, m, hpsi )
                    END DO
                    !
                 END DO
-                !
-                ijkb0 = ijkb0 + nh(nt)
                 !
              END IF
              !

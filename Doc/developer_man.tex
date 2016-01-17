@@ -1,5 +1,5 @@
 \documentclass[12pt,a4paper]{article}
-\def\version{5.1.1}
+\def\version{5.3}
 \def\qe{{\sc Quantum ESPRESSO}}
 \def\qeforge{\texttt{qe-forge.org}}
 \textwidth = 17cm
@@ -13,9 +13,6 @@
 % doesn't handle epsfig commands !!!
 \usepackage{graphicx}
 
-
-% \def\htmladdnormallink#1#2{#1}
-
 \def\configure{\texttt{configure}}
 \def\configurac{\texttt{configure.ac}}
 \def\autoconf{\texttt{autoconf}}
@@ -23,22 +20,14 @@
 \def\Makefile{\texttt{Makefile}}
 
 \def\qeImage{quantum_espresso.pdf}
-\def\democritosImage{democritos.pdf}
-
-\begin{htmlonly}
-\def\qeImage{quantum_espresso.png}
-\def\democritosImage{democritos.png}
-\end{htmlonly}
 
 \begin{document} 
 \author{}
 \date{}
 \title{
-  \includegraphics[width=5cm]{\qeImage} \hskip 2cm
-  \includegraphics[width=6cm]{\democritosImage}\\
-  \vskip 1cm
+  \includegraphics[width=5cm]{\qeImage} \\
   % title
-  \Huge Developer's Manual for \qe (v.\version) \smallskip
+  \Huge Developer's Manual for \\ \qe\ (v.\version) 
 }
 \maketitle
 
@@ -240,6 +229,9 @@ bug is filed.
 
 \subsection{Contributing new developments}
 
+{\em Important notice: starting with release 5.3, there will be important 
+changes in the development model of \qe. Stay tuned.}
+
 Various procedures can be followed to contribute new developments.
 It is possible to contribute:
 \begin{itemize}
@@ -376,20 +368,8 @@ be reported in the \texttt{Doc/release-notes} file.
 \end{itemize}
 
 \section{Stable releases and development cycle}
-When a sufficient number of new features or improvements are available,
-a stable release is packaged. There is no well-defined procedure or 
-rule to decide when it is time to package a new release: the decision
-is taken after informal discussions of developers on the mailing list. 
-Note what open-source conventional wisdom says: 
-{\em release early, release often}.
-
-When the decision is made, development of new stuff is temporarily
-stopped: nothing new or potentially ''dangerous'' is added, and all 
-attention is dedicated to fix bugs and to stabilize the distribution.
-This phase should last a few weeks or so, a few months at most.
-
-Releases are labelled as $N.M.p$, where $N$=major, $M$=minor, $p$=bugfix.
-The logic goes more or less as follows:
+Stable releases are labelled as $N.M.p$, where $N$=major, $M$=minor, 
+$p$=bugfix. The logic goes more or less as follows:
 \begin{itemize}
 \item {\em Major}: when something really important changes, e.g.
 \begin{enumerate}
@@ -403,10 +383,13 @@ The logic goes more or less as follows:
 gone until now)
 \item {\em Minor}: when some important new functionality is being added
 \item {\em Bugfix}: only bug fixes; occasionally, minor new functionalities
-that don't break any existing one are allowed to sneak into a bugfix release.
+that don't break any existing ones are allowed to sneak into a bugfix release.
 \end{itemize}
 It may be convenient to make a SVN branch at release $N.M.0$: this allows 
 to go on with the development while keeping track of bug fixes. 
+
+Since release 5.2 (June 20, 2015), stable release are packaged at
+fixed dates. The initial schedule is a release every three months.
 
 Releases are stored to \qeforge. Given the size of the complete distribution,
 the release is split into a ``core'' distribution and ``add-ons'',
@@ -414,22 +397,35 @@ additional packages, that can be downloaded and installed on demand
 from the core distribution. ``External'' packages can be independently
 released, as long as there is no compatibility problem.
 
-The automatic downloading of packages from the web suffers a catch-22: 
-the core distribution must know the location of all packages it downloads,
-but these are known only {\em after} packages are uploaded to \qeforge.
+The automatic downloading of packages is implemented in file
+\texttt{install/plugins\_makefile} and configured in file
+\texttt{install/plugins\_list}. For independently released packages,
+it is sufficient to update links. For add-ons packages, not contained
+in the core distribution, there is however a catch-22: 
+the core distribution must know the link to all packages it downloads,
+but these are known only {\em after} such packages are uploaded to 
+\qeforge\ (and the only way to discover the exact link is to go over
+the released package with the mouse).
 The workaround is that the core distribution looks for generic names,
 written in file \texttt{install/plugins\_list}. These names are translated
 by \qeforge\ into specific names. After all packages have been uploaded,
-file \texttt{/var/lib/gforge/archives/index.php}, residing on \qeforge, must be
-edited and links updated. Only the sys.adm. can do this.
+file \texttt{/var/lib/gforge/archives/index.php}, residing on \qeforge,
+must be edited and links updated. This requires system privileges on
+the machine hosting \qeforge.
 
 \paragraph{Preparing a release} 
-{\bf to be written} 
+When the release date approaches, development of new stuff is temporarily
+stopped: nothing new or potentially ''dangerous'' is added, and all 
+attention is dedicated to fix bugs and to stabilize the distribution.
+This manual and the user manual have to be updated.
+
+Edit the script \texttt{dev-tools/release.sh} to make tarballs.
 
 \paragraph{Updating web site} After the release has been uploaded to
 \qeforge, the online documentation must be copied to directory
 \texttt{/var/www/quantum\_wp\_db/wordpress-3.1.4/wp-content/uploads/Doc}
-on the web site (only the sys.adm. can do this).
+on the web site (this requires system privileges on the machine hosting
+the web server).
 
 \section{Structure of the distribution}
 
@@ -449,6 +445,7 @@ Common files and directories in the \texttt{espresso/} directory are:
    Doc/                     environment_variables
    clib/                    flib/
    Modules/                 upftools/
+   COUPLE/
 \end{verbatim}
 Apart from  \texttt{License} and \texttt{README} whose meaning is 
 obvious, the other files and directories are related to
@@ -461,7 +458,9 @@ obvious, the other files and directories are related to
 \item  {\em General documentation} (not package-specific):
 \texttt{Doc/}
 \item {\em  C and Fortran Libraries, modules} (F95):
-\texttt{clib/}, \texttt{flib/}, \texttt{Modules/}
+\texttt{clib/}, \texttt{flib/}, \texttt{Modules/}, \texttt{COUPLE/} 
+(the latter contains code and documentation useful to call \qe\ programs
+ from external codes).
 \end{itemize}
 
 The core distribution also  contains the three package-specific directories
@@ -1094,8 +1093,11 @@ The latter should not depend on any module, except for modules
 Subdirectory \texttt{clib/} contains libraries written in C 
 (\texttt{*.c}). There are currently two different ways to 
 ensure that fortran can call C routines. The new and recommanded 
-way use the fortran-95 intrinsic \texttt{iso\_c\_binding} module: 
-see \texttt{flib/wrappers.f90} for an example of usage.
+way uses the fortran-95 intrinsic \texttt{iso\_c\_binding} module.
+See \texttt{Modules/wrappers.f90} for inspiration and examples.
+Reference documentation can be found for instance here:\\
+{\tt 
+https://gcc.gnu.org/onlinedocs/gfortran/Interoperable-Subroutines-and-Functions.html}
 
 The old way uses macros in C routines:
 \begin{enumerate}
@@ -1245,15 +1247,52 @@ convenient in some cases that the two sets are not the same.
 In particular, it is often convenient to have \texttt{nrx1}=\texttt{nr1}+1
 to reduce memory conflicts.
 
-\section{Parallelization}
+\section{Parallelization (MPI)}
 
-In parallel execution (MPI only), N independent processes are started
-(do not start more than one per processor!) that communicate via calls
-to MPI libraries. Each process has its own set of variables and knows
-nothing about other processes' variables. Variables that take little memory 
-are replicated, those that take a lot of memory (wavefunctions, G-vectors, 
-R-space grid) are distributed.
-    
+In MPI parallelization, a number of independent processes are started
+on as many processors, communicating via calls to MPI libraries
+(the code will work even with more than one process per processor, 
+but this is not a smart thing to do). Each process has its own 
+set of variables and knows nothing about other processes' variables. 
+Variables that take little memory are replicated on all processors, 
+those that take a lot of memory (wavefunctions, G-vectors, R-space grid) 
+are distributed. 
+
+\subsection{General rules}
+
+Calls to MPI libraries should be confined to a few selected places,
+not scattered everywhere into the source code. The vast majority
+of parallel operations consist either in broadcasts from one processor
+to all others, or in global operations: parallel sums and transpose.
+All you need is the MPI communicator (plus the ID of the root processor
+for broadcasts), and the appropriate call to wrapper routines, contained 
+in {\tt espresso/Modules/mp.f90} and {\tt espresso/Modules/mp\_base.f90}. 
+For instance: {\tt mp\_sum} is a wrapper to {\tt mpi\_reduce},
+{\tt mp\_bcast} to {\tt mpi\_bcast}.
+
+For efficiency reasons (latency is very significant), performing many
+parallel operations on a small amount of data each must be avoided. 
+If you can, store a sizable amount of data and transmit it in a single
+MPI call. An example of REALLY BAD code:
+\begin{verbatim}
+   COMPLEX, ALLOCATABLE :: wfc(:,:), swfc(:,:)
+   ALLOCATE (wfc(npwx,m),swfc(npwx,m))
+   DO i=1,m
+      DO j=1,m
+         ps = zdotc(npw,wfc(1,i),1,swfc(1,j)1)
+         CALL mp_sum(ps,intra_bgrp_group)
+      END DO
+   END DO
+\end{verbatim}
+MUCH better code, both for serial and parallel speed:
+\begin{verbatim}
+   COMPLEX, ALLOCATABLE :: ps(:,:), wfc(:,:), swfc(:,:)
+   ALLOCATE (ps(m,m), wfc(npwx,m),swfc(npwx,m))
+   CALL zgemm ('c', 'n', m, m, npw, (1.d0, 0.d0), wfc, &
+               npwx, swfc, npwx, (0.d0, 0.d0), ps, m)
+   CALL mp_sum(ps,intra_bgrp_group)
+\end{verbatim}
+
 \subsubsection{Usage of \#ifdef \_\_MPI}
 
 Calls to MPI libraries require variables contained into a 
@@ -1261,20 +1300,77 @@ Calls to MPI libraries require variables contained into a
 In order to prevent compilation problems on serial machines,
 the following rules {\em must} be followed:
 \begin{itemize}
-\item All direct calls to MPI library routines must either be 
-\#ifdef'ed, or wrapped into calls to routines like those in
-module \texttt{mp.f90}.
-\item Routines that are used only in parallel execution may be either
-called and \#ifdef'ed inside, or not called (via an \#ifdef) and not 
-compiled (via an \#ifdef again) in the serial case. Note that
+\item Direct calls to MPI library routines must be replaced by
+calls to wrapper routines like those in module \texttt{mp.f90}. 
+If this is not possible or not convenient, use \#ifdef \_\_MPI
+to prevent compilation and usage in the serial case. Note that 
 some compilers do not like empty files or modules containing nothing!
-\item Other \#ifdef \_\_MPI may be needed when the flux of parallel
-execution is different from that of the serial case.
-\item All other \#ifdef \_\_MPI are not needed, may be removed if
-already present
-\item \#ifdef \_\_PARA is obsolescent: it should be removed from
-existing code, it must not be used in new developments.
+\item Wrapper routines do not need to be conditionally called:
+there are \#ifdef's inside them. Keep the difference between serial
+and parallel code to a minimum: more \#ifdef \_\_MPI may be needed
+only when the flux of parallel and serial execution differ.
+\item Unneeded \#ifdef \_\_MPI may be removed if already present;
+\#ifdef \_\_PARA is obsolete and must not be used in new developments.
 \end{itemize}
+
+\subsection{Parallelization levels and communicators}
+
+\texttt{mp\_world.f90} is the module containing all processors 
+on which QE is running. \texttt{world\_comm} 
+is the communicator between all such processors. In QE, its usage
+should be confined to parallel environment initialization. It
+should not be used in source code, unless this is used only by
+stand-alone executables that perform simple auxiliary tasks 
+and do not allow for  multiple parallelization levels.
+Unless QE is started from an external code, \texttt{world\_comm}
+will in practice coincides with MPI\_WORLD\_COMM.
+
+\texttt{mp\_image.f90} is the module containing information about 
+``image" parallelization, i.e. division into quasi-independent similar
+calculations, each taking care of a different set of atomic
+positions (NEB, PWscf) or of different irreps/phonon wavevectors
+(PHonon). \texttt{intra\_image\_comm} is the communicator between 
+processors of the same image (most of the action will happen here); 
+\texttt{inter\_image\_comm} is the communicator between processors 
+belonging to different images (should be used only when communication 
+between images is necessary). 
+{\tt intra\_image\_comm} and {\tt world\_comm} coincide if there 
+is just one image running.
+
+\texttt{mp\_pools.f90} is the module containing information about k-point 
+(``pool") parallelization. \texttt{intra\_pool\_comm} is the communicator 
+between processors working on the same group (``pool") of k-points;
+\texttt{inter\_pool\_comm} is the communicator between different 
+k-point pools. Note that:
+\begin{quote}
+\framebox{$\sum_{\bf k}\equiv$ sum over local {\bf k}-points + 
+{\tt mp\_sum} on {\tt inter \_pool\_comm}}
+\end{quote}
+{\tt intra\_pool\_comm} and {\tt intra\_image\_comm} coincide if there 
+is just one k-point pool.
+
+\texttt{mp\_bands.f90} is the module containing information about band
+parallelization. \texttt{intra\_bgrp\_comm} is the communicator between
+processors of the same group of bands; \texttt{inter\_band\_comm} is the 
+communicator between processors belonging to different groups of bands.
+Note that band parallelization is currently implemented only in CP and
+for hybrid functionals in PW. When a sum over all bands is needed:
+\begin{quote}
+\framebox{$\sum_i\equiv$ sum over local bands + {\tt mp\_sum} on 
+{\tt inter\_bgrp\_comm}}
+\end{quote}
+{\tt intra\_bgrp\_comm} and {\tt intra\_pool\_comm} coincide
+if there is just one band group.
+
+Plane waves (${\bf k}+{\bf G}$ or ${\bf G}$ vectors up to the specified 
+kinetic energy cutoff) are distributed across processors of the
+{\tt intra\_bgrp\_comm} communicators. Sums over all plane waves
+or {\bf G}-vectors (as e.g. in scalar products $\langle\phi_i|\phi_j\rangle$) 
+should be performed as follows:
+\begin{quote}
+\framebox{$\sum_{\bf G} \equiv$ {\tt mp\_sum} on {\tt intra\_bgrp\_comm}}
+\end{quote}
+The same holds for real-space FFT's grid.
 
 \subsection{Tricks and pitfalls}
 
@@ -1821,7 +1917,7 @@ First-level tags:
 \subsection{Programming style (or lack of it)}
 
 There are currently no strict guidelines for developers. You
-should however try to follow at least the following loose ones:
+should however follow at least the following loose ones:
 \begin{itemize}
 \item Preprocessing options should be capitalized and start with 
 two underscores. Examples: \_\_AIX, \_\_LINUX, ...
@@ -1834,8 +1930,8 @@ CALL something( )
 the code. Remember that what is obvious to you may not be obvious to other 
 people. It is especially important to document what a routine does, what
 it needs on input, what it produces on output. A few words of comment
-may save hours of searches into the code for a piece of missing information.
-\item do not use machine-dependent extensions or sloppy syntax. Am example:
+may save hours of searching into the code for a piece of missing information.
+\item do not use machine-dependent extensions or sloppy syntax. An example:
 Standard f90 
 requires that a \& is needed both at end of line AND at the beginning of 
 continuation line if there is a character variable (inside ' ' or " ")
@@ -1860,19 +1956,30 @@ pointers may hinder optimization. Allocatable arrays should be used instead.
 status.
 \item Beware fancy constructs like structures: they look great on paper, 
 but they also have the potential to make a code unreadable, or inefficient,
-or not working because some compiler gets confused.
+or simply unusable because some compiler gets confused. Avoid nested
+structures unless you have a valid reason to use them.
 \item Be careful with F90 array syntax and in particular with
-array sections: the compiler might decide that a copy is needed,
-thus silently increasing the memory footprint.
+array sections. Passing an array section to a routine may look elegant
+but it may turn out to be inefficient: a copy will be silently done
+if the section is not contiguous in memory (or if the compiler
+decides it is the right thing to do), increasing the memory footprint.
 \item Do not pass unallocated arrays as arguments, even in those cases where
 they are not actually used inside the subroutine: some compilers don't
 like it.
 \item Do not use any construct that is susceptible to be flagged as 
 out-of-bounds error, even if no actual out-of-bound error takes place.
-\item Always use IMPLICIT NONE and define all local variables.
-All variables passed as arguments to a routine should be defined as 
+\item Always use IMPLICIT NONE and declare all local variables.
+All variables passed as arguments to a routine should be declared as 
 INTENT (IN), (OUT), or (INOUT). All variables from modules should be
-explicitly specified via USE module, ONLY : variable
+explicitly specified via USE module, ONLY : variable. Variables used
+in an array declaration must be declared first, as in the following
+example:
+\begin{verbatim}
+    INTEGER, INTENT(IN)   :: N 
+    REAL(dp), INTENT(OUT) :: A(N) 
+\end{verbatim}
+in this order (some compilers complain if you put the second line 
+before the first).
 \end{itemize}
 
 \subsection{Adding or modifying input variables}
@@ -1926,9 +2033,9 @@ read\_namelists.f90 )
 \section{Using SVN}
 \label{Sec:SVN}
 \qe is maintained in a Subversion (SVN) repository. Developers can have 
-read-write access when needed. Note that the latest (development) version
-may not work properly, and sometimes not even compile properly. 
-Use at your own risk. 
+read-write access when needed, read-only otherwise. Note that the latest 
+(development) version may occasionally not work properly: carefully
+verify the results before using it in production work.
 
 Subversion, also known as SVN, is a software that allows many
 developers to work and maintain a single copy of a software in a
@@ -1942,10 +2049,10 @@ More information on SVN can be found here:
 
 Current organization:
 \begin{itemize}
-\item {\em trunk}: development goes on here -- open read-only to everybody
+\item {\em trunk}: development goes on here
 \item {\em branches}: major new developments, disruptive changes, very
 experimental features, things that have a long time before being released
-(if ever) ... -- branches may or may not be public
+(if ever) ... 
 \item {\em external}: packages that are be developed in a separate SVN trunk
 can be downloaded into the main QE trunk -- access may be restricted to
 specific (usually expert) developers.
@@ -1954,10 +2061,12 @@ specific (usually expert) developers.
 Follow the instructions in
 \texttt{http://qe-forge.org/gf/project/q-e/scmsvn},
 under `Access Info'',
-to check out (i.e.  download) the SVN repository in either 
-read-write or anonymous mode.
+to check out (i.e.  download) the SVN repository.
 The distribution will appear in directory \texttt{trunk/espresso/}.
 Branches (i.e. sub-versions) will appear as separate directories.
+
+{\em Important notice: since v.5.3 the SVN repository is no longer accessible
+read-only to everybody.}
 
 \subsection{SVN operations}
 

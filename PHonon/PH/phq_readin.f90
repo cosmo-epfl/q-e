@@ -1,4 +1,5 @@
 !
+
 ! Copyright (C) 2001-2013 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
@@ -26,7 +27,9 @@ SUBROUTINE phq_readin()
   USE start_k,       ONLY : reset_grid
   USE klist,         ONLY : xk, nks, nkstot, lgauss, two_fermi_energies, lgauss
   USE ktetra,        ONLY : ltetra
-  USE control_flags, ONLY : gamma_only, tqr, restart, lkpoint_dir, io_level
+  USE control_flags, ONLY : gamma_only, tqr, restart, lkpoint_dir, io_level, &
+                            llondon, ts_vdw
+  USE funct,         ONLY : dft_is_nonlocc, dft_is_hybrid
   USE uspp,          ONLY : okvan
   USE fixed_occ,     ONLY : tfixed_occ
   USE lsda_mod,      ONLY : lsda, nspin
@@ -70,6 +73,9 @@ SUBROUTINE phq_readin()
   USE el_phon,       ONLY : elph,elph_mat,elph_simple,elph_nbnd_min, elph_nbnd_max, &
                             el_ph_sigma, el_ph_nsigma, el_ph_ngauss,auxdvscf
   USE dfile_star,    ONLY : drho_star, dvscf_star
+  ! YAMBO >
+  USE YAMBO,         ONLY : elph_yambo,dvscf_yambo
+  ! YAMBO <
   !
   IMPLICIT NONE
   !
@@ -84,7 +90,7 @@ SUBROUTINE phq_readin()
   REAL(DP) :: amass_input(nsx)
     ! save masses read from input here
   CHARACTER (LEN=256) :: filename
-  !
+  CHARACTER (LEN=8)   :: verbosity
   CHARACTER(LEN=80)          :: card
   CHARACTER(LEN=1), EXTERNAL :: capital
   CHARACTER(LEN=6) :: int_to_char
@@ -101,7 +107,7 @@ SUBROUTINE phq_readin()
   INTEGER :: nqaux, iq
   !
   NAMELIST / INPUTPH / tr2_ph, amass, alpha_mix, niter_ph, nmix_ph,  &
-                       nat_todo, iverbosity, outdir, epsil,  &
+                       nat_todo, verbosity, iverbosity, outdir, epsil,  &
                        trans,  zue, zeu, max_seconds, reduce_io, &
                        modenum, prefix, fildyn, fildvscf, fildrho, &
                        ldisp, nq1, nq2, nq3, &
@@ -120,7 +126,7 @@ SUBROUTINE phq_readin()
   ! niter_ph     : maximum number of iterations
   ! nmix_ph      : number of previous iterations used in mixing
   ! nat_todo     : number of atom to be displaced
-  ! iverbosity   : verbosity control
+  ! verbosity    : verbosity control (iverbosity is obsolete)
   ! outdir       : directory where input, output, temporary files reside
   ! epsil        : if true calculate dielectric constant
   ! trans        : if true calculate phonon
@@ -220,7 +226,8 @@ SUBROUTINE phq_readin()
   nmix_ph      = 4
   nat_todo     = 0
   modenum      = 0
-  iverbosity   = 0
+  iverbosity   = 1234567
+  verbosity    = 'default'
   trans        = .TRUE.
   lrpa         = .FALSE.
   lnoloc       = .FALSE.
@@ -239,7 +246,7 @@ SUBROUTINE phq_readin()
   max_seconds  =  1.E+7_DP
   reduce_io    = .FALSE.
   IF ( TRIM(outdir) == './') THEN
-     CALL get_env( 'ESPRESSO_TMPDIR', outdir )
+     CALL get_environment_variable( 'ESPRESSO_TMPDIR', outdir )
      IF ( TRIM( outdir ) == ' ' ) outdir = './'
   ENDIF
   prefix       = 'pwscf'
@@ -278,7 +285,7 @@ SUBROUTINE phq_readin()
   drho_star%basis = 'modes'
   drho_star%pat  = .TRUE.
   drho_star%ext = 'drho'
-  CALL get_env( 'ESPRESSO_FILDRHO_DIR', drho_star%dir)
+  CALL get_environment_variable( 'ESPRESSO_FILDRHO_DIR', drho_star%dir)
   IF ( TRIM( drho_star%dir ) == ' ' ) &
       drho_star%dir = TRIM(outdir)//"/Rotated_DRHO/"
   !
@@ -286,15 +293,38 @@ SUBROUTINE phq_readin()
   dvscf_star%basis = 'modes'
   dvscf_star%pat  = .FALSE.
   dvscf_star%ext = 'dvscf'
-  CALL get_env( 'ESPRESSO_FILDVSCF_DIR', dvscf_star%dir)
+  CALL get_environment_variable( 'ESPRESSO_FILDVSCF_DIR', dvscf_star%dir)
   IF ( TRIM( dvscf_star%dir ) == ' ' ) &
       dvscf_star%dir = TRIM(outdir)//"/Rotated_DVSCF/"
   !
   ! ...  reading the namelist inputph
   !
-  IF (meta_ionode) READ( 5, INPUTPH, ERR=30, IOSTAT = ios )
-30  CALL mp_bcast(ios, meta_ionode_id, world_comm )
-  CALL errore( 'phq_readin', 'reading inputph namelist', ABS( ios ) )
+  IF (meta_ionode) THEN
+     READ( 5, INPUTPH, ERR=30, IOSTAT = ios )
+     !
+     ! ...  iverbosity/verbosity hack
+     !
+     IF ( iverbosity == 1234567 ) THEN
+        SELECT CASE( trim( verbosity ) )
+           CASE( 'debug', 'high', 'medium' )
+              iverbosity = 1
+           CASE( 'low', 'default', 'minimal' )
+              iverbosity = 0
+           CASE DEFAULT
+              iverbosity = 0
+         END SELECT
+     ELSE
+        ios = 1234567
+     END IF
+  END IF
+30 CONTINUE
+  CALL mp_bcast(ios, meta_ionode_id, world_comm )
+  IF ( ios == 1234567 ) THEN
+     CALL infomsg( 'phq_readin' , &
+                 'iverbosity is obsolete, use "verbosity" instead' )
+  ELSE IF ( ABS(ios) /= 0 ) THEN
+     CALL errore( 'phq_readin', 'reading inputph namelist', ABS( ios ) )
+  END IF
   !
   ! ...  broadcast all input variables
   !
@@ -320,8 +350,6 @@ SUBROUTINE phq_readin()
      IF (alpha_mix (iter) .LT.0.D0.OR.alpha_mix (iter) .GT.1.D0) CALL &
           errore ('phq_readin', ' Wrong alpha_mix ', iter)
   ENDDO
-  IF (qplot.AND..NOT.ldisp) CALL errore('phq_readin', &
-                                        'qplot requires ldisp=.true.',1)
   IF (niter_ph.LT.1.OR.niter_ph.GT.maxter) CALL errore ('phq_readin', &
        ' Wrong niter_ph ', 1)
   IF (nmix_ph.LT.1.OR.nmix_ph.GT.5) CALL errore ('phq_readin', ' Wrong &
@@ -351,13 +379,41 @@ SUBROUTINE phq_readin()
      elph=.true.
      elph_mat=.false.
      elph_simple=.false.
+  ! YAMBO >
+  CASE( 'yambo' )
+     elph=.true.
+     elph_mat=.false.
+     elph_simple=.false.
+     elph_yambo=.true.
+     nogg=.true.
+     auxdvscf=trim(fildvscf)
+  CASE( 'dvscf' )
+     elph=.false.
+     elph_mat=.false.
+     elph_simple=.false.
+     elph_yambo=.false.
+     dvscf_yambo=.true.
+     nogg=.true.
+     auxdvscf=trim(fildvscf)
+  ! YAMBO <
   CASE DEFAULT
      elph=.false.
      elph_mat=.false.
      elph_simple=.false.
   END SELECT
-  IF (elph.AND.qplot) &
-     CALL errore('phq_readin', 'qplot and elph not implemented',1)
+  ! YAMBO >
+  IF (.not.elph_yambo) then
+    ! YAMBO <
+    IF (elph.AND.qplot) &
+       CALL errore('phq_readin', 'qplot and elph not implemented',1)
+  ENDIF
+
+  ! YAMBO >
+  IF (.not.elph_yambo.and..not.dvscf_yambo) then
+    ! YAMBO <
+    IF (qplot.AND..NOT.ldisp) CALL errore('phq_readin','qplot requires ldisp=.true.',1)
+    !
+  ENDIF
 
   IF (ldisp.AND.only_init.AND.(.NOT.lqdir)) &
      CALL errore('phq_readin', &
@@ -578,6 +634,18 @@ SUBROUTINE phq_readin()
   IF (lda_plus_u) CALL errore('phq_readin',&
      'The phonon code with LDA+U is not yet available',1)
 
+  IF (llondon) CALL errore('phq_readin',&
+     'The phonon code with DFT-D is not yet available',1)
+
+  IF (ts_vdw) CALL errore('phq_readin',&
+     'The phonon code with TS-VdW is not yet available',1)
+
+  IF ( dft_is_nonlocc() ) CALL errore('phq_readin',&
+     'The phonon code with non-local vdW functionals is not yet available',1)
+
+  IF ( dft_is_hybrid() ) CALL errore('phq_readin',&
+     'The phonon code with hybrid functionals is not yet available',1)
+
   IF (okpaw.and.(lraman.or.elop)) CALL errore('phq_readin',&
      'The phonon code with paw and raman or elop is not yet available',1)
 
@@ -676,6 +744,8 @@ SUBROUTINE phq_readin()
         'phq_readin', 'gamma_gamma tricks with nat_todo &
        & not available. Use nogg=.true.', 1)
      !
+     IF (nimage > 1 .AND. lgamma_gamma) CALL errore( &
+        'phq_readin','gamma_gamma tricks with images not implemented',1)
      IF (lgamma) THEN
         nksq = nks
      ELSE
@@ -687,8 +757,10 @@ SUBROUTINE phq_readin()
   IF (tfixed_occ) &
      CALL errore('phq_readin','phonon with arbitrary occupations not tested',1)
   !
-  IF (elph.AND..NOT.lgauss) CALL errore ('phq_readin', 'Electron-&
+  !YAMBO >
+  IF (elph.AND..NOT.lgauss.and..NOT.elph_yambo) CALL errore ('phq_readin', 'Electron-&
        &phonon only for metals', 1)
+  !YAMBO <
   IF (elph.AND.fildvscf.EQ.' ') CALL errore ('phq_readin', 'El-ph needs &
        &a DeltaVscf file', 1)
   !   There might be other variables in the input file which describe

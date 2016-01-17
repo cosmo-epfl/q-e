@@ -1,55 +1,48 @@
    SUBROUTINE driver()
     USE basis,            ONLY : startingconfig, starting_pot, starting_wfc
     USE input_parameters, ONLY : restart_mode
-    USE io_global,        ONLY : stdout, ionode, ionode_id
-    USE io_files,         ONLY : srvaddress, iunupdate, seqopn
+    USE io_global,        ONLY : ionode, ionode_id
+    USE io_files,         ONLY : srvaddress, seqopn, delete_if_present
     USE mp_global,        ONLY : mp_startup, mp_bcast, mp_global_end, intra_image_comm
-    USE control_flags,    ONLY : conv_elec, history, istep, conv_ions, restart, lbfgs, lmd
+    USE control_flags,    ONLY : conv_elec, conv_ions, restart, lbfgs, lmd
+    USE extrapolation,    ONLY : update_file, update_pot
     USE ions_base,              ONLY : tau
     USE cell_base,              ONLY : alat, at, omega, bg
     USE force_mod,              ONLY : force
     USE ener,                   ONLY : etot
     USE f90sockets,               ONLY: open_socket, readbuffer, writebuffer
-    USE cellmd,                 ONLY : lmovecell, at_old, omega_old, cell_factor
+    USE cellmd,                 ONLY : lmovecell, at_old, omega_old    
     USE fft_base,               ONLY : dfftp
     USE fft_base,               ONLY : dffts
     USE gvect,                  ONLY : gcutm
     USE gvecs,                  ONLY : gcutms
-    USE grid_subroutines,       ONLY : realspace_grids_init
-  USE command_line_options, ONLY: input_file_
+    USE grid_subroutines,       ONLY : realspace_grid_init
   USE read_input,        ONLY : read_input_file
-  USE start_k,            ONLY : nks_start, xk_start, wk_start, &
-                                 nk1, nk2, nk3, k1, k2, k3
       USE wvfct,           ONLY : ecutwfc
     IMPLICIT NONE
-    
-    LOGICAL drv_check
+     
     INTEGER, PARAMETER :: MSGLEN=12
-    LOGICAL :: isinit=.false., hasdata=.false., firststep=.true., exst
+    LOGICAL :: isinit=.false., hasdata=.false., firststep=.true.
     CHARACTER*12 :: header
     CHARACTER*1024 :: parbuffer, host
-    INTEGER :: socket, nat, inet, port, ccmd, i, info, replicaid=-1, parbufflen
+    INTEGER :: socket, nat, inet, port, replicaid=-1, parbufflen
     REAL*8 :: sigma(3,3)
     REAL *8 :: cellh(3,3), cellih(3,3), vir(3,3), pot, mtxbuffer(9)
-    REAL*8, ALLOCATABLE :: combuf(:), tauhist(:,:,:)
+    REAL*8, ALLOCATABLE :: combuf(:)
     INTEGER::CALLS=1, str_index, str_index2
-    REAL*8:: dist_ang(6),dist_ang_old(6),dist_ang_reset(6),latvec(3,3)
+    REAL*8:: dist_ang(6),dist_ang_old(6),dist_ang_reset(6)
 !Conditions to reset the cell
     LOGICAL:: lang_reset=.false., lang_old=.false., ldist_reset=.false., &
               ldist_old=.false., lvol_old=.false., lvol_reset=.false.
     REAL*8 :: ang_tol=10.d0, dist_tol=0.05d0, vol_tol=0.05d0
-    REAL*8 :: omega_reset
+    REAL*8 :: omega_reset=0.0d0
 
-!Kpoint mesh received from i-Pi
-    INTEGER:: KPT_a,KPT_b,KPT_c
-    CHARACTER(LEN=60):: trimmed_line
 !Ecutwfc
-    real*8:: ecutwfc_orig,ecutwfc_scale
+    REAL*8:: ecutwfc_orig
  
     ecutwfc_orig = ecutwfc
     lbfgs = .true.
     lmd = .true.
-    history = 1
     lvol_old   = .false.
     lvol_reset = .false.
     ldist_old  = .false.
@@ -99,15 +92,10 @@
          if (ionode) call readbuffer(socket, nat) ! actually this reads the replica id when the driver is used for multiple independent runs or replicas
          call mp_bcast(nat,ionode_id, intra_image_comm)
          if (nat.ne.replicaid .and. .not. firststep) then
-           history = 1 ! resets history -- want to do new-old propagation if replica changed
-           if (ionode) then
-             CALL seqopn( iunupdate, 'update', 'FORMATTED', exst )
-             WRITE( UNIT = iunupdate, FMT = * ) history
-             WRITE( UNIT = iunupdate, FMT = * ) tauhist
-             CLOSE( UNIT = iunupdate, STATUS = 'KEEP' )
-           endif
+           call delete_if_present('update') ! resets file history 
+           call update_file()
          endif
-         if (ionode) write(*,*) " @ DRIVER MODE: Receiving replica", nat, replicaid, history
+         if (ionode) write(*,*) " @ DRIVER MODE: Receiving replica", nat, "old: ", replicaid
          replicaid = nat
 
          if (ionode) then 
@@ -137,8 +125,6 @@
          call mp_bcast(nat,ionode_id, intra_image_comm)
          if (.not.allocated(combuf)) then
            allocate(combuf(3*nat))
-           allocate(tauhist(3,nat,3) )
-           tauhist=0.d0
          end if
          if (ionode) call readbuffer(socket, combuf, nat*3)
          call mp_bcast(combuf,ionode_id, intra_image_comm)
@@ -208,14 +194,9 @@
      " @ DRIVER MODE: reset by cell vol   change from previous reset : ", &
      abs(dist_ang(4:6)-dist_ang_reset(4:6))
                      endif
-                     history = 1 ! resets history -- want to do new-old propagation if replica changed
-                     if (ionode) then
-                       CALL seqopn( iunupdate, 'update', 'FORMATTED', exst )
-                       WRITE( UNIT = iunupdate, FMT = * ) history
-                       WRITE( UNIT = iunupdate, FMT = * ) tauhist
-                       CLOSE( UNIT = iunupdate, STATUS = 'KEEP' )
-                     endif
-                     tauhist=0.d0
+                     
+                     call delete_if_present('update') ! resets file history
+                     call update_file( )
                      at_old = at
                      omega_old = omega
                      omega_reset = omega
@@ -229,7 +210,8 @@
                      lmd=.true.
                      conv_ions = .false.
                      dfftp%nr1=0; dfftp%nr2=0; dfftp%nr3=0; dffts%nr1=0; dffts%nr2=0; dffts%nr3=0
-                     CALL realspace_grids_init (dfftp, dffts,at, bg, gcutm, gcutms )
+                     CALL realspace_grid_init (dfftp, at, bg, gcutm )
+                     CALL realspace_grid_init (dfftp, at, bg, gcutms )
                      ! if (ionode) call system("rm -rf pw*")
                      CALL init_run()
              else
@@ -254,19 +236,9 @@
          vir=transpose(sigma)*omega*0.5   ! return virial in atomic units and without the volume scaling         
 
          ! updates history
-         istep = istep+1
-         history = history+1
-         tauhist(:,:,3) = tauhist(:,:,2)
-         tauhist(:,:,2) = tauhist(:,:,1)
-         tauhist(:,:,1) = tau(:,:)
-
-         if (ionode) then
-           CALL seqopn( iunupdate, 'update', 'FORMATTED', exst )
-           WRITE( UNIT = iunupdate, FMT = * ) history
-           WRITE( UNIT = iunupdate, FMT = * ) tauhist
-           CLOSE( UNIT = iunupdate, STATUS = 'KEEP' )
-         endif
-                
+         call update_file()
+         call update_pot()
+         
          hasdata=.true.
       else if (trim(header)=="GETFORCE") then
          ! communicates energy info back to i-pi
@@ -290,7 +262,7 @@
          CALL punch( 'config' )
       endif
     ENDDO driver_loop    
-1	conv_ions=.true.
+    conv_ions=.true.
 contains
 !************************************************************************************
 

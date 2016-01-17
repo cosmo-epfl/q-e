@@ -20,27 +20,20 @@ SUBROUTINE plugin_arguments()
   !
   USE plugin_flags
   !
-  !
   IMPLICIT NONE
   !
-  INTEGER  :: iiarg, nargs, iargc, i, i0
+  INTEGER  :: iiarg, nargs, i, i0
   CHARACTER (len=1), EXTERNAL ::  lowercase
   CHARACTER (len=256) :: arg
   !
-  !
-#if defined(__ABSOFT)
-#   define getarg getarg_
-#   define iargc  iargc_
-#endif
-  !
-  nargs = iargc()
+  nargs = command_argument_count()
   ! add here more plugins
   use_plumed = .false.
   use_pw2casino = .false.
   use_environ = .false.
   !
   DO iiarg = 1, nargs 
-    CALL getarg( iiarg, plugin_name)
+    CALL get_command_argument( iiarg, plugin_name)
     IF ( plugin_name(1:1) == '-') THEN
        i0 = 1
        IF ( plugin_name(2:2) == '-') i0 = 2

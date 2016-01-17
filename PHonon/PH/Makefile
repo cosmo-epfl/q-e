@@ -4,7 +4,7 @@ include ../../make.sys
 
 # location of needed modules and included files (if any)
 MODFLAGS= $(MOD_FLAG)../../iotk/src $(MOD_FLAG)../../Modules \
-          $(MOD_FLAG)../../PW/src $(MOD_FLAG).
+          $(MOD_FLAG)../../FFTXlib $(MOD_FLAG)../../PW/src $(MOD_FLAG).
 IFLAGS=
 
 PHOBJS = \
@@ -28,6 +28,7 @@ allocate_part.o \
 allocate_pert.o \
 allocate_phq.o \
 apply_dpot.o \
+yambo.o \
 bcast_ph_input.o \
 cch_psi_all.o \
 cg_psi.o \
@@ -178,7 +179,7 @@ write_matrix.o \
 write_modes.o \
 write_rec.o \
 zstar_eu.o \
-zstar_eu_us.o
+zstar_eu_us.o 
 
 RAMANOBJS =    \
 cft_wave.o \
@@ -205,7 +206,7 @@ rigid.o \
 write_eigenvectors.o
 
 PWOBJS = ../../PW/src/libpw.a
-QEMODS = ../../Modules/libqemod.a
+QEMODS = ../../Modules/libqemod.a ../../FFTXlib/libqefft.a
 
 
 LIBOBJS	= ../../flib/ptools.a ../../flib/flib.a ../../clib/clib.a ../../iotk/src/libiotk.a

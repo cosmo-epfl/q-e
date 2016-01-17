@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2013 Quantum ESPRESSO group
+! Copyright (C) 2001-2015 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -19,7 +19,7 @@ SUBROUTINE addusdens(rho)
   IMPLICIT NONE
   !
   !
-  REAL(kind=dp), intent(inout) :: rho(dfftp%nnr,nspin_mag)
+  REAL(kind=dp), INTENT(inout) :: rho(dfftp%nnr,nspin_mag)
   !
   IF ( tqr ) THEN
      CALL addusdens_r(rho,.true.)
@@ -29,14 +29,14 @@ SUBROUTINE addusdens(rho)
 #else
      CALL addusdens_g(rho)
 #endif
-  END IF
+  ENDIF
   !
   RETURN
   !
 END SUBROUTINE addusdens
 !
 !----------------------------------------------------------------------
-subroutine addusdens_g(rho)
+SUBROUTINE addusdens_g(rho)
   !----------------------------------------------------------------------
   !
   !  This routine adds to the charge density the part which is due to
@@ -54,100 +54,113 @@ subroutine addusdens_g(rho)
   USE control_flags,        ONLY : gamma_only
   USE wavefunctions_module, ONLY : psic
   !
-  implicit none
+  IMPLICIT NONE
   !
-  REAL(kind=dp), intent(inout) :: rho(dfftp%nnr,nspin_mag)
+  REAL(kind=dp), INTENT(inout) :: rho(dfftp%nnr,nspin_mag)
   !
   !     here the local variables
   !
 
-  integer :: ig, na, nt, ih, jh, ijh, is
+  INTEGER :: ig, na, nt, ih, jh, ijh, is, nab, nb, nij
   ! counters
 
-  real(DP) :: tbecsum(nspin_mag)  
-  real(DP), allocatable :: qmod (:), ylmk0 (:,:)
-  ! the modulus of G
-  ! the spherical harmonics
+  REAL(DP), ALLOCATABLE :: tbecsum(:,:,:)
+  ! \sum_kv <\psi_kv|\beta_l><beta_m|\psi_kv> for each species of atoms
+  REAL(DP), ALLOCATABLE :: qmod (:), ylmk0 (:,:)
+  ! modulus of G, spherical harmonics
+  COMPLEX(DP), ALLOCATABLE :: skk(:,:), aux2(:,:)
+  ! structure factors, US contribution to rho
+  COMPLEX(DP), ALLOCATABLE ::  aux (:,:), qgm(:)
+  ! work space for rho(G,nspin), Fourier transform of q
 
-  complex(DP) :: skk
-  complex(DP), allocatable ::  aux (:,:), qgm(:)
-  ! work space for rho(G,nspin)
-  ! Fourier transform of q
+  IF (.not.okvan) RETURN
 
-  if (.not.okvan) return
+  CALL start_clock ('addusdens')
 
-  call start_clock ('addusdens')
-
-  allocate (aux ( ngm, nspin_mag))    
-  allocate (qmod( ngm))    
-  allocate (qgm( ngm))    
-  allocate (ylmk0( ngm, lmaxq * lmaxq))    
+  ALLOCATE (aux ( ngm, nspin_mag) )
+  ALLOCATE (qmod( ngm), qgm( ngm) )
+  ALLOCATE (ylmk0( ngm, lmaxq * lmaxq) )
 
   aux (:,:) = (0.d0, 0.d0)
-  call ylmr2 (lmaxq * lmaxq, ngm, g, gg, ylmk0)
-  do ig = 1, ngm
+  CALL ylmr2 (lmaxq * lmaxq, ngm, g, gg, ylmk0)
+  DO ig = 1, ngm
      qmod (ig) = sqrt (gg (ig) )
-  enddo
-  do nt = 1, ntyp
-     if ( upf(nt)%tvanp ) then
-        ijh = 0
-        do ih = 1, nh (nt)
-           do jh = ih, nh (nt)
-#ifdef DEBUG_ADDUSDENS
-  call start_clock ('addus:qvan2')
-#endif
-              call qvan2 (ngm, ih, jh, nt, qmod, qgm, ylmk0)
-#ifdef DEBUG_ADDUSDENS
-  call stop_clock ('addus:qvan2')
-#endif
-              ijh = ijh + 1
-              do na = 1, nat
-                 if (ityp (na) .eq.nt) then
-                    !
-                    !  Multiply becsum and qg with the correct structure factor
-                    tbecsum(1:nspin_mag) = becsum(ijh,na,1:nspin_mag)
-                    !
-#ifdef DEBUG_ADDUSDENS
-  call start_clock ('addus:aux')
-#endif
-
-                    do is = 1, nspin_mag
-!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(skk, ig)
-                       do ig = 1, ngm
-                          skk = eigts1 (mill (1,ig), na) * &
-                                eigts2 (mill (2,ig), na) * &
-                                eigts3 (mill (3,ig), na)
-                          aux(ig,is)=aux(ig,is) + qgm(ig)*skk*tbecsum(is)
-                       enddo
-!$OMP END PARALLEL DO
-                    enddo
-
-#ifdef DEBUG_ADDUSDENS
-  call stop_clock ('addus:aux')
-#endif
-                 endif
-              enddo
-           enddo
-        enddo
-     endif
-  enddo
+  ENDDO
   !
-  deallocate (ylmk0)
-  deallocate (qgm)
-  deallocate (qmod)
+  DO nt = 1, ntyp
+     IF ( upf(nt)%tvanp ) THEN
+        !
+        ! nij = max number of (ih,jh) pairs per atom type nt
+        !
+        nij = nh(nt)*(nh(nt)+1)/2
+        !
+        ! count max number of atoms of type nt
+        !
+        nab = 0
+        DO na = 1, nat
+           IF ( ityp(na) == nt ) nab = nab + 1
+        ENDDO
+        !
+        ALLOCATE ( skk(ngm,nab), tbecsum(nij,nab,nspin_mag), aux2(ngm,nij) )
+        !
+        nb = 0
+        DO na = 1, nat
+           IF ( ityp(na) == nt ) THEN
+              nb = nb + 1
+              tbecsum(:,nb,:) = becsum(1:nij,na,1:nspin_mag)
+!$omp parallel do default(shared) private(ig)
+              DO ig = 1, ngm
+                 skk(ig,nb) = eigts1 (mill (1,ig), na) * &
+                              eigts2 (mill (2,ig), na) * &
+                              eigts3 (mill (3,ig), na)
+              ENDDO
+!$omp end parallel do
+           ENDIF
+        ENDDO
+
+        DO is = 1, nspin_mag
+           ! sum over atoms
+           CALL dgemm( 'N', 'T', 2*ngm, nij, nab, 1.0_dp, skk, 2*ngm,&
+                tbecsum(1,1,is), nij, 0.0_dp, aux2, 2*ngm )
+           ! sum over lm indices of Q_{lm}
+           ijh = 0
+           DO ih = 1, nh (nt)
+              DO jh = ih, nh (nt)
+                 ijh = ijh + 1
+                 CALL qvan2 (ngm, ih, jh, nt, qmod, qgm, ylmk0)
+!$omp parallel do default(shared) private(ig)
+                 DO ig = 1, ngm
+                    aux(ig,is) = aux(ig,is) + aux2(ig,ijh)*qgm(ig)
+                 ENDDO
+!$omp end parallel do
+             ENDDO
+           ENDDO
+        ENDDO
+        DEALLOCATE (aux2, tbecsum, skk )
+     ENDIF
+  ENDDO
+  !
+  DEALLOCATE (ylmk0)
+  DEALLOCATE (qgm, qmod)
   !
   !     convert aux to real space and add to the charge density
   !
-  do is = 1, nspin_mag
+#ifdef DEBUG_ADDUSDENS
+  CALL start_clock ('addus:fft')
+#endif
+  DO is = 1, nspin_mag
      psic(:) = (0.d0, 0.d0)
      psic( nl(:) ) = aux(:,is)
-     if (gamma_only) psic( nlm(:) ) = CONJG(aux(:,is))
+     IF (gamma_only) psic( nlm(:) ) = CONJG (aux(:,is))
      CALL invfft ('Dense', psic, dfftp)
      rho(:, is) = rho(:, is) +  DBLE (psic (:) )
-  enddo
-  deallocate (aux)
+  ENDDO
+#ifdef DEBUG_ADDUSDENS
+  CALL stop_clock ('addus:fft')
+#endif
+  DEALLOCATE (aux)
 
-  call stop_clock ('addusdens')
-  return
-end subroutine addusdens_g
+  CALL stop_clock ('addusdens')
+  RETURN
+END SUBROUTINE addusdens_g
 
