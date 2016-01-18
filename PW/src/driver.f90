@@ -211,7 +211,7 @@
                      conv_ions = .false.
                      dfftp%nr1=0; dfftp%nr2=0; dfftp%nr3=0; dffts%nr1=0; dffts%nr2=0; dffts%nr3=0
                      CALL realspace_grid_init (dfftp, at, bg, gcutm )
-                     CALL realspace_grid_init (dfftp, at, bg, gcutms )
+                     CALL realspace_grid_init (dffts, at, bg, gcutms )
                      ! if (ionode) call system("rm -rf pw*")
                      CALL init_run()
              else
