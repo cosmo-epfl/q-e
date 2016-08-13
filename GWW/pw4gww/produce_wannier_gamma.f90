@@ -22,7 +22,8 @@
        USE wavefunctions_module, ONLY : evc
        USE exx,      ONLY : ecutfock,vexx,exx_div_check,exx_grid_init,exx_grid_check,exxinit,x_occupation
        USE funct,    ONLY : exx_is_active, dft_is_hybrid,start_exx,stop_exx
-       USE wvfct,     ONLY  : current_k, ecutwfc,et
+       USE wvfct,    ONLY : current_k, et
+       USE gvecw,    ONLY : ecutwfc
        USE scf,                  ONLY : scf_type, scf_type_COPY, &
                                    create_scf_type, destroy_scf_type, &
                                    rho, rho_core, rhog_core, &
@@ -479,7 +480,7 @@
                    call start_clock('self_basis')
                    call davcio(evc,2*nwordwfc,iunwfc,is,-1)
                    if(.not.l_real) then 
-                      call self_basis_lanczos(nset,n_self_lanczos,numw_prod,nsteps_lanczos_self,is,l_full,n_full)
+                      call self_basis_lanczos(nset,n_self_lanczos,numw_prod,nsteps_lanczos_self,is,l_full,n_full(is))
                    else
 !NOT_TO_BE_INCLUDED_START
                       call self_basis_lanczos_real(nset,n_self_lanczos,numw_prod,nsteps_lanczos_self,is)

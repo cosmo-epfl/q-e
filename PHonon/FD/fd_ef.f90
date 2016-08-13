@@ -2,8 +2,7 @@
 program fd_raman
 !-----------------------------------------------------------------------
   use constants
-  use io_files,   ONLY : prefix, tmp_dir, outdir
-  use io_files,   ONLY : psfile, pseudo_dir
+  use io_files,   ONLY : prefix, tmp_dir, psfile, pseudo_dir
   use io_global,  ONLY : stdout, ionode, ionode_id
   USE mp_global,  ONLY : mp_startup
   USE environment,ONLY : environment_start
@@ -11,7 +10,7 @@ program fd_raman
   USE cell_base,  ONLY : tpiba2, alat,omega, at, bg, ibrav, celldm
   USE ions_base,  ONLY : amass, nat, atm, zv, tau, ntyp => nsp, ityp
   USE kinds,      ONLY : dp 
-  USE wvfct,      ONLY : ecutwfc
+  USE gvecw,      ONLY : ecutwfc
   USE symm_base,       ONLY : nsym, nsym_ns, nsym_na, invsym, s, sr, &
                               t_rev, ftau, sname
   USE symme
@@ -97,8 +96,8 @@ program fd_raman
     write(6,*) '**************************************************'
     write(6,*) ''
     write(6,*) '    prefix=  ',trim(prefix)
-    write(6,*) '    outdir=  ',trim(outdir)
-    write(6,*) '    ectuwfc= ',ecutwfc, 'Ry'
+    write(6,*) '    outdir=  ',trim(tmp_dir)
+    write(6,*) '    ecutwfc= ',ecutwfc, 'Ry'
 
     WRITE( stdout, 199) ibrav, alat, omega, nat, ntyp
     199 FORMAT(5X, &

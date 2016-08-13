@@ -1,10 +1,10 @@
 # Makefile for X-ray spectra calculation (XSPECTRA)
 
-include ../../make.sys
+include ../../make.inc
 
 # location of needed modules and included files (if any)
 MODFLAGS= $(MOD_FLAG)../../iotk/src $(MOD_FLAG)../../Modules \
-          $(MOD_FLAG)../../FFTXlib $(MOD_FLAG)../../PW/src $(MOD_FLAG).
+          $(MOD_FLAG)../../LAXlib $(MOD_FLAG)../../FFTXlib $(MOD_FLAG)../../PW/src $(MOD_FLAG).
 IFLAGS=
 
 XOBJS = \
@@ -40,11 +40,10 @@ GIPAWOBJS=./paw_gipaw.o \
 
 MANIP_XS_OBJ=./gaunt_mod.o 
              
-QEMODS = ../../Modules/libqemod.a ../../FFTXlib/libqefft.a
+QEMODS = ../../Modules/libqemod.a ../../FFTXlib/libqefft.a ../../LAXlib/libqela.a
 PWOBJS = ../../PW/src/libpw.a 
 
-LIBOBJS = ../../iotk/src/libiotk.a ../../flib/flib.a \
-         ../../clib/clib.a ../../flib/ptools.a
+LIBOBJS = ../../iotk/src/libiotk.a ../../clib/clib.a 
 
 TLDEPS = bindir libs pw
 
@@ -64,7 +63,7 @@ tldeps :
 	test -n "$(TLDEPS)" && ( cd ../.. ; $(MAKE) $(MFLAGS) $(TLDEPS) || exit 1) || :
 
 clean :
-	- /bin/rm -f *.x *.o *~ *.F90 *.d *.mod *.i *.L
+	- /bin/rm -f *.x *.o *~ *_tmp.f90 *.d *.mod *.i *.L
 	- /bin/rm -f ../../bin/xspectra.x
 
 include make.depend

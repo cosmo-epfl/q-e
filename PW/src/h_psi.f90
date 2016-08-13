@@ -1,5 +1,5 @@
 
-! Copyright (C) 2002-2009 Quantum ESPRESSO group
+! Copyright (C) 2002-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -21,12 +21,13 @@ SUBROUTINE h_psi( lda, n, m, psi, hpsi )
   ! ... output:
   ! ...    hpsi  H*psi
   !
-  ! --- bgrp parallelization allowed 
+  ! --- Wrapper routine: performs bgrp parallelization on non-distributed bands
+  ! --- if suitable and required, calls old H\psi routine h_psi_
   !
   USE kinds,            ONLY : DP
   USE noncollin_module, ONLY : npol
   USE funct,            ONLY : exx_is_active
-  USE mp_bands,         ONLY : tbgrp, set_bgrp_indices, inter_bgrp_comm
+  USE mp_bands,         ONLY : use_bgrp_in_hpsi, set_bgrp_indices, inter_bgrp_comm
   USE mp,               ONLY : mp_sum
   !
   IMPLICIT NONE
@@ -39,19 +40,24 @@ SUBROUTINE h_psi( lda, n, m, psi, hpsi )
   !
   CALL start_clock( 'h_psi_bgrp' )
 
-! if exx_is_active bgrp parallelization is already used in exx routines that are part of Hpsi !
-! if m <= 1 there is nothing to distribute so we can avoid the communication step.
-!           moreover if a band by band diagonalization (such as ParO for instance) is used it may 
-!           be useful/necessary to operate on different vectors independently.
-  if (tbgrp .and. .not. exx_is_active() .and. m > 1) then
-      hpsi(:,:) = (0.d0,0.d0)
-      call set_bgrp_indices(m,m_start,m_end)
-      if (m_end >= m_start)  & !! at least one band in this band group
-          call h_psi_( lda, n, m_end-m_start+1, psi(1,m_start), hpsi(1,m_start) )
-      call mp_sum(hpsi,inter_bgrp_comm)
-   else ! no one else to communicate with 
-      call h_psi_( lda, n, m, psi, hpsi )
-   end if
+  ! band parallelization with non-distributed bands is performed if
+  ! 1. enabled (variable use_bgrp_in_hpsi must be set to .T.)
+  ! 2. exact exchange is not active (if it is, band parallelization is already
+  !    used in exx routines called by Hpsi)
+  ! 3. there is more than one band, otherwise there is nothing to parallelize
+  !
+  IF (use_bgrp_in_hpsi .AND. .NOT. exx_is_active() .AND. m > 1) THEN
+     ! use band parallelization here
+     hpsi(:,:) = (0.d0,0.d0)
+     CALL set_bgrp_indices(m,m_start,m_end)
+     ! Check if there at least one band in this band group
+     IF (m_end >= m_start) &
+        CALL h_psi_( lda, n, m_end-m_start+1, psi(1,m_start), hpsi(1,m_start) )
+     CALL mp_sum(hpsi,inter_bgrp_comm)
+  ELSE
+     ! don't use band parallelization here
+     CALL h_psi_( lda, n, m, psi, hpsi )
+  END IF
 
   CALL stop_clock( 'h_psi_bgrp' )
   RETURN
@@ -75,6 +81,7 @@ SUBROUTINE h_psi_( lda, n, m, psi, hpsi )
   ! ...    hpsi  H*psi
   !
   USE kinds,    ONLY : DP
+  USE wavefunctions_module, ONLY : psic
   USE bp,       ONLY : lelfield,l3dstring,gdir, efield, efield_cry
   USE becmod,   ONLY : bec_type, becp, calbec
   USE lsda_mod, ONLY : current_spin
@@ -86,11 +93,12 @@ SUBROUTINE h_psi_( lda, n, m, psi, hpsi )
   USE funct,    ONLY : dft_is_meta
   USE control_flags,    ONLY : gamma_only
   USE noncollin_module, ONLY: npol, noncolin
-  USE realus,   ONLY : real_space, invfft_orbital_gamma, initialisation_level, &
-                       fwfft_orbital_gamma, calbec_rs_gamma, &
-                       add_vuspsir_gamma, v_loc_psir
-  USE fft_base, ONLY : dffts
-  USE exx,      ONLY : vexx
+  USE realus,   ONLY : real_space, &
+                       invfft_orbital_gamma, fwfft_orbital_gamma, calbec_rs_gamma, add_vuspsir_gamma, & 
+                       invfft_orbital_k, fwfft_orbital_k, calbec_rs_k, add_vuspsir_k, & 
+                       v_loc_psir_inplace
+  USE fft_base, ONLY : dffts, dtgs
+  USE exx,      ONLY : vexx, vexxace_gamma, vexxace_k
   USE funct,    ONLY : exx_is_active
   !
   IMPLICIT NONE
@@ -100,17 +108,106 @@ SUBROUTINE h_psi_( lda, n, m, psi, hpsi )
   COMPLEX(DP), INTENT(OUT) :: hpsi(lda*npol,m)   
   !
   INTEGER     :: ipol, ibnd, incr
+  REAL(dp)    :: ee
   !
   CALL start_clock( 'h_psi' )
+
+  hpsi (:, 1:m) = (0.0_dp, 0.0_dp)
+
+  CALL start_clock( 'h_psi:pot' )
+  !
+  ! ... the local potential V_Loc psi
+  !
+  !
+  IF ( gamma_only ) THEN
+     ! 
+     IF ( real_space .and. nkb > 0  ) then 
+        !
+        ! ... real-space algorithm
+        ! ... fixme: real_space without beta functions does not make sense
+        !
+        IF ( dtgs%have_task_groups .AND. ( m >= dtgs%nogrp )) then 
+           incr = 2 * dtgs%nogrp
+        ELSE
+           incr = 2
+        ENDIF
+        DO ibnd = 1, m, incr
+           ! ... transform psi to real space -> psic 
+           CALL invfft_orbital_gamma(psi,ibnd,m) 
+           ! ... compute becp%r = < beta|psi> from psic in real space
+     CALL start_clock( 'h_psi:calbec' )
+           CALL calbec_rs_gamma(ibnd,m,becp%r) 
+     CALL stop_clock( 'h_psi:calbec' )
+           ! ... psic -> vrs * psic (psic overwritten will become hpsi)
+           CALL v_loc_psir_inplace(ibnd,m) 
+           ! ... psic (hpsi) -> psic + vusp
+           CALL  add_vuspsir_gamma(ibnd,m)
+           ! ... transform psic back in reciprocal space and assign it to hpsi
+           CALL fwfft_orbital_gamma(hpsi,ibnd,m) 
+        END DO
+        !
+     ELSE
+        ! ... usual reciprocal-space algorithm
+        CALL vloc_psi_gamma ( lda, n, m, psi, vrs(1,current_spin), hpsi ) 
+        !
+     ENDIF 
+     !
+  ELSE IF ( noncolin ) THEN 
+     !
+     CALL vloc_psi_nc ( lda, n, m, psi, vrs, hpsi )
+     !
+  ELSE  
+     ! 
+     IF ( real_space .and. nkb > 0  ) then 
+        !
+        ! ... real-space algorithm
+        ! ... fixme: real_space without beta functions does not make sense
+        !
+        IF ( dtgs%have_task_groups .AND. ( m >= dtgs%nogrp )) then 
+           incr = dtgs%nogrp
+        ELSE
+           incr = 1
+        ENDIF
+        DO ibnd = 1, m
+           ! ... transform psi to real space -> psic 
+           CALL invfft_orbital_k(psi,ibnd,m) 
+           ! ... compute becp%r = < beta|psi> from psic in real space
+     CALL start_clock( 'h_psi:calbec' )
+           CALL calbec_rs_k(ibnd,m) 
+     CALL stop_clock( 'h_psi:calbec' )
+           ! ... psic -> vrs * psic (psic overwritten will become hpsi)
+           CALL v_loc_psir_inplace(ibnd,m) 
+           ! ... psic (hpsi) -> psic + vusp
+           CALL  add_vuspsir_k(ibnd,m)
+           ! ... transform psic back in reciprocal space and assign it to hpsi
+           CALL fwfft_orbital_k(hpsi,ibnd,m) 
+        END DO
+        !
+     ELSE
+        !
+        CALL vloc_psi_k ( lda, n, m, psi, vrs(1,current_spin), hpsi )
+        !
+     END IF  
+     !
+  END IF  
+
+  IF ( nkb > 0 .AND. .NOT. real_space) THEN
+     !
+     CALL start_clock( 'h_psi:calbec' )
+     CALL calbec ( n, vkb, psi, becp, m )
+     CALL stop_clock( 'h_psi:calbec' )
+     CALL add_vuspsi( lda, n, m, hpsi )
+     !
+  END IF
   !  
-  ! ... Here we apply the kinetic energy (k+G)^2 psi
+  CALL stop_clock( 'h_psi:pot' )
+  !
+  ! ... Here we add the kinetic energy (k+G)^2 psi
   !
   DO ibnd = 1, m
-     hpsi (1:n, ibnd) = g2kin (1:n) * psi (1:n, ibnd)
-     hpsi (n+1:lda,ibnd) = (0.0_dp, 0.0_dp)
+     hpsi (1:n, ibnd) = hpsi(1:n, ibnd) + g2kin (1:n) * psi (1:n, ibnd)
      IF ( noncolin ) THEN
-        hpsi (lda+1:lda+n, ibnd) = g2kin (1:n) * psi (lda+1:lda+n, ibnd)
-        hpsi (lda+n+1:lda*npol, ibnd) = (0.0_dp, 0.0_dp)
+        hpsi (lda+1:lda+n, ibnd) = hpsi(lda+1:lda+n,ibnd) + g2kin (1:n) * psi (lda+1:lda+n, ibnd)
      END IF
   END DO
   !
@@ -129,65 +226,20 @@ SUBROUTINE h_psi_( lda, n, m, psi, hpsi )
   ENDIF
   !
   !
-  ! ... the local potential V_Loc psi
-  !
-  CALL start_clock( 'h_psi:vloc' )
-  !
-  IF ( gamma_only ) THEN
-     ! 
-     IF ( real_space .and. nkb > 0  ) then 
-        !
-        ! ... real-space algorithm
-        ! ... fixme: real_space without beta functions does not make sense
-        !
-        IF ( dffts%have_task_groups .AND. ( m >= dffts%nogrp )) then 
-           incr = 2 * dffts%nogrp
-        ELSE
-           incr = 2
-        ENDIF
-        DO ibnd = 1, m, incr
-           ! ... transform psi to real space, saved in temporary memory
-           CALL invfft_orbital_gamma(psi,ibnd,m,.true.) 
-           ! ... becp%r = < beta|psi> on psi in real space
-           CALL calbec_rs_gamma(ibnd,m,becp%r) 
-           ! ... psi is now replaced by hpsi ??? WHAT FOR ???
-           CALL invfft_orbital_gamma(hpsi,ibnd,m)
-           ! ... hpsi -> hpsi + psi*vrs  (psi read from temporary memory)
-           CALL v_loc_psir(ibnd,m) 
-           ! ... hpsi -> hpsi + vusp
-           CALL  add_vuspsir_gamma(ibnd,m)
-           ! ... transform back hpsi, clear psi in temporary memory
-           CALL fwfft_orbital_gamma(hpsi,ibnd,m,.true.) 
-        END DO
-        !
-     ELSE
-        ! ... usual reciprocal-space algorithm
-        CALL vloc_psi_gamma ( lda, n, m, psi, vrs(1,current_spin), hpsi ) 
-     ENDIF 
-     !
-  ELSE IF ( noncolin ) THEN 
-     !
-     CALL vloc_psi_nc ( lda, n, m, psi, vrs, hpsi )
-     !
-  ELSE  
-     !
-     CALL vloc_psi_k ( lda, n, m, psi, vrs(1,current_spin), hpsi )
-     !
-  END IF  
-  CALL stop_clock( 'h_psi:vloc' )
-  !
   ! ... Here the product with the non local potential V_NL psi
   ! ... (not in the real-space case: it is done together with V_loc)
   !
-  IF ( nkb > 0 .AND. .NOT. real_space) THEN
-     !
-     CALL start_clock( 'h_psi:vnl' )
-     CALL calbec ( n, vkb, psi, becp, m )
-     CALL add_vuspsi( lda, n, m, hpsi )
-     CALL stop_clock( 'h_psi:vnl' )
-     !
+  IF ( exx_is_active() ) THEN
+#ifdef __EXX_ACE 
+     IF (gamma_only) THEN
+        CALL vexxace_gamma(lda,m,psi,ee,hpsi)
+     ELSE
+        CALL vexxace_k(lda,m,psi,ee,hpsi) 
+     END IF
+#else  
+     CALL vexx( lda, n, m, psi, hpsi, becp )
+#endif
   END IF
-  IF ( exx_is_active() ) CALL vexx( lda, n, m, psi, hpsi, becp )
   !
   ! ... electric enthalpy if required
   !

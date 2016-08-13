@@ -14,10 +14,11 @@
    MODULE fft_base
 !=----------------------------------------------------------------------=!
 
-        USE kinds, ONLY: DP
         USE parallel_include
 
         USE fft_types, ONLY: fft_dlay_descriptor
+        USE task_groups, ONLY: task_groups_descriptor
+        USE fft_smallbox_type, ONLY: fft_box_descriptor
 
         IMPLICIT NONE
 
@@ -32,18 +33,23 @@
              !  Dimensions of the 3D real and reciprocal space
              !  FFT grid relative to the smooth part of the charge density
              !  (may differ from the full charge density grid for USPP )
-        TYPE ( fft_dlay_descriptor ) :: dfftb ! descriptor for box grids
+        TYPE ( fft_box_descriptor ) :: dfftb ! descriptor for box grids
              !  Dimensions of the 3D real and reciprocal space
              !  FFT grid relative to the "small box" computation
              !  of the atomic augmentation part of the 
              !  charge density used in USPP (to speed up CPV iterations)
         TYPE ( fft_dlay_descriptor ) :: dfft3d
+             !
+        TYPE ( task_groups_descriptor ) :: dtgs
+             !  Dimensions of the task groups
 
         SAVE
 
         PRIVATE
 
-        PUBLIC :: dfftp, dffts, dfftb, dfft3d, fft_dlay_descriptor
+        PUBLIC :: dfftp, dffts, dfft3d, fft_dlay_descriptor
+        PUBLIC :: dtgs, task_groups_descriptor
+        PUBLIC :: dfftb, fft_box_descriptor
 
 !=----------------------------------------------------------------------=!
    END MODULE fft_base

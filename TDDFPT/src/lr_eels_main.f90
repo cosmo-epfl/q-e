@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2015 Quantum ESPRESSO group
+! Copyright (C) 2001-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -24,7 +24,7 @@ PROGRAM lr_eels_main
                                   & d0psi, d0psi2, LR_iteration, LR_polarization, &
                                   & plot_type, nbnd_total, pseudo_hermitian, &
                                   & itermax_int, revc0, lr_io_level, code2, &
-                                  & eels, lr_periodic, approximation !eps
+                                  & eels, approximation 
   USE io_files,              ONLY : nd_nmbr
   USE global_version,        ONLY : version_number
   USE ions_base,             ONLY : tau,nat,atm,ityp
@@ -33,7 +33,6 @@ PROGRAM lr_eels_main
                                     ibnd_start, ibnd_end
   USE wvfct,                 ONLY : nbnd
   USE wavefunctions_module,  ONLY : psic
-  USE control_flags,         ONLY : tddfpt
   USE check_stop,            ONLY : check_stop_now, check_stop_init
   USE fft_base,              ONLY : dffts
   USE uspp,                  ONLY : okvan
@@ -46,7 +45,7 @@ PROGRAM lr_eels_main
   !
   INTEGER             :: ip, na, pol_index, ibnd
   INTEGER             :: iter_restart, iteration
-  LOGICAL             :: rflag, tg_tmp
+  LOGICAL             :: rflag
   INTEGER(kind=c_int) :: kilobytes
   LOGICAL, EXTERNAL   :: test_restart
   !
@@ -64,10 +63,8 @@ PROGRAM lr_eels_main
      WRITE(stdout,'("<lr_eels_main>")')
   ENDIF
   !
-  ! Let the PHonon and TDDFPT routines know that 
-  ! they are doing tddfpt and eels.
+  ! Let the TDDFPT routines know that they are doing EELS.
   !
-  tddfpt = .TRUE.
   eels   = .TRUE.
   !
   ! Reading input file and PWSCF xml, some initialisation
@@ -84,15 +81,9 @@ PROGRAM lr_eels_main
   !
   CALL lr_print_preamble_eels()
   !
-  ! Memory usage
-  !
-  !CALL memstat( kilobytes )
-  !IF ( kilobytes > 0 ) WRITE(stdout,'(5X,"lr_eels_main, & 
-  !    & per-process dynamical memory:",f7.1,"Mb")' ) kilobytes/1000.0
-  !
   ! Non-scf calculation at k and k+q
   !
-  IF (.NOT.restart .AND. .NOT.lr_periodic) THEN
+  IF (.NOT.restart) THEN
      !
      WRITE( stdout, '(/,5X,"------------ Nscf calculation ---------------")')
      !
@@ -101,7 +92,6 @@ PROGRAM lr_eels_main
   ENDIF
   !
   ! Initialisation, and read the wfct's at k and k+q
-  ! (lr_periodic=.false.).
   !
   CALL lr_init_nfo()
   !
@@ -121,15 +111,9 @@ PROGRAM lr_eels_main
   !
   IF ( ntask_groups > 1 ) WRITE(stdout,'(5X,"Task groups is activated...")' )
   !
-  ! If q=G then read the unperturbed wfct's from PWscf
-  !
-  IF (lr_periodic) CALL lr_read_wf_eels_periodic()
-  !
   ! Band groups parallelization (if activated)
   !
   CALL set_bgrp_indices(nbnd, ibnd_start, ibnd_end)
-  !
-  tg_tmp = dffts%have_task_groups
   !
   ! Set up initial response orbitals (starting Lanczos vectors)
   !
@@ -138,8 +122,6 @@ PROGRAM lr_eels_main
   ELSE
      CALL lr_solve_e()
   ENDIF
-  !
-  dffts%have_task_groups = tg_tmp
   !
   DEALLOCATE( psic )
   !
@@ -269,8 +251,6 @@ SUBROUTINE lr_print_preamble_eels()
                    & /5x,"to time-dependent density-functional perturbation theory", &
                    & /5x,"Comp. Phys. Commun. 196, 460 (2015). ")' )
     WRITE( stdout, '(/5x,"----------------------------------------")' )
-    !
-    !IF (eps) WRITE( stdout, '(/5x,"Calculation of the dielectric function (not the inverse), because eps=.true.")' )
     !
     WRITE( stdout, '(/5x,"Using the ' // trim(approximation) // ' approximation.")' )
     !

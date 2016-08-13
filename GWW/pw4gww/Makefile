@@ -1,18 +1,17 @@
 # Makefile for pw4gww (PW4GWW)
 # Author G. Stenuit and L. Martin-Samos
 
-include ../../make.sys
+include ../../make.inc
 
 # location of include files
 IFLAGS=-I../../include
 
 # location of needed modules
 MODFLAGS= $(MOD_FLAG)../../iotk/src $(MOD_FLAG)../../Modules \
-          $(MOD_FLAG)../../PW/src $(MOD_FLAG)../../FFTXlib $(MOD_FLAG).
+          $(MOD_FLAG)../../PW/src $(MOD_FLAG)../../FFTXlib $(MOD_FLAG)../../LAXlib $(MOD_FLAG).
 
 #location of needed libraries
-LIBOBJS= ../../iotk/src/libiotk.a ../../flib/flib.a \
-         ../../clib/clib.a ../../flib/ptools.a 
+LIBOBJS= ../../iotk/src/libiotk.a ../../clib/clib.a 
 
 PW4GWWOBJS = \
 allocate_wannier.o \
@@ -53,7 +52,7 @@ hpsi_pw4gww.o \
 cgsolve_all_gamma.o \
 realus.o 
 
-QEMODS = ../../Modules/libqemod.a ../../FFTXlib/libqefft.a
+QEMODS = ../../Modules/libqemod.a ../../FFTXlib/libqefft.a ../../LAXlib/libqela.a
 PWOBJS = ../../PW/src/libpw.a
 
 LIBMIN= ../minpack/minpacklib.a
@@ -62,7 +61,7 @@ TLDEPS= bindir libs pw
 
 all : tldeps pw4gww.x
 
-pw4gww.x : pw4gww.o libpw4gww.a  $(PW4GWWOBJS) $(PWOBJS) $(QEMODS)  $(LIBMIN) 
+pw4gww.x : pw4gww.o libpw4gww.a  $(PW4GWWOBJS) $(PWOBJS) $(QEMODS)  $(LIBOBJS) $(LIBMIN) 
 	$(LD) $(LDFLAGS) -o $@ \
 	pw4gww.o libpw4gww.a $(PWOBJS) $(QEMODS) $(LIBOBJS) $(LIBMIN) $(LIBS)
 	- ( cd ../../bin ; ln -fs ../GWW/pw4gww/$@ . )
@@ -76,7 +75,7 @@ libpw4gww.a : $(PW4GWWOBJS)
 	$(RANLIB) $@
 
 clean :
-	- /bin/rm -fv *.x *.o *~ *.F90 *.d *.mod *.i *.L libpw4gww.a
+	- /bin/rm -fv *.x *.o *~ *_tmp.f90 *.d *.mod *.i *.L libpw4gww.a
 
 include make.depend
 # DO NOT DELETE

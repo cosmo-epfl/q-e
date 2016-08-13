@@ -329,7 +329,7 @@ SUBROUTINE wf( clwf, c, bec, eigr, eigrb, taub, irb, &
 #ifdef __MPI
               irb3=irb(3,isa)
 #endif
-              CALL invfft('Box',qv,dfftb,isa)
+              CALL invfft(qv,dfftb,isa)
               iqv=1
               qvt=(0.D0,0.D0)
               qvt=boxdotgridcplx(irb(1,isa),qv,expo(1,inw))
@@ -370,7 +370,7 @@ SUBROUTINE wf( clwf, c, bec, eigr, eigrb, taub, irb, &
                     qv(npb(ig))=eigrb(ig,isa)*qgb(ig,ijv,is)
                     qv(nmb(ig))=CONJG(eigrb(ig,isa)*qgb(ig,ijv,is))
                  END DO
-                 CALL invfft('Box',qv,dfftb,isa)
+                 CALL invfft(qv,dfftb,isa)
                  iqv=1
                  qvt=0.D0
                  qvt=boxdotgridcplx(irb(1,isa),qv,expo(1,inw))
@@ -874,12 +874,7 @@ SUBROUTINE ddyn( m, Omat, Umat, b1, b2, b3 )
         END DO
      END DO
 
-#if ! defined __ESSL
      CALL zhpev('V','U',m,wp,wr,z,m,f1,f2,ierr1)
-#else
-     CALL zhpev(21, wp, wr, z, m, m, f2, 4*m)
-     ierr1 = 0
-#endif
 
      IF (ierr1.NE.0) THEN 
         WRITE( stdout, * ) "failed to diagonalize W!"
@@ -2556,18 +2551,7 @@ SUBROUTINE wfsteep( m, Omat, Umat, b1, b2, b3 )
            END DO
         END DO
 
-#if defined (__ESSL)
-        !
-        CALL zhpev(21, wp1, wr, z, m, m, f2, 4*m)
-        !
-        ierr1 = 0
-        !
-#else   
-        !    
         CALL zhpev('V','U',m,wp1,wr,z,m,f1,f2,ierr)
-        !  
-#endif
-
         IF (ierr.NE.0) STOP 'failed to diagonalize W!'
 
      ELSE
@@ -2604,12 +2588,7 @@ SUBROUTINE wfsteep( m, Omat, Umat, b1, b2, b3 )
            END DO
         END DO
 
-#if defined __ESSL
-        CALL zhpev(21, wp1, wr, z, m, m, f2, 4*m)
-        ierr1 = 0
-#else
         CALL zhpev('V','U',m,wp1,wr,z,m,f1,f2,ierr)
-#endif
         IF (ierr.NE.0) STOP 'failed to diagonalize W!'
 
         maxdt=maxwfdt

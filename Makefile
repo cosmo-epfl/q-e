@@ -6,7 +6,7 @@
 # of the License. See the file `License' in the root directory
 # of the present distribution.
 
-include make.sys
+include make.inc
 
 default :
 	@echo 'to install Quantum ESPRESSO, type at the shell prompt:'
@@ -48,7 +48,9 @@ default :
 	@echo '  doc          build documentation'
 	@echo '  links        create links to all executables in bin/'
 	@echo '  tar          create a tarball of the source tree'
-	@echo '  tar-gui      create a standalone PWgui tarball from the GUI sources'
+	@if test -d GUI/; then \
+		echo '  tar-gui      create a standalone PWgui tarball from the GUI sources'; \
+		echo '  tar-qe-modes create a tarball for QE-modes (Emacs major modes for Quantum ESPRESSO)'; fi
 	@echo '  clean        remove executables and objects'
 	@echo '  veryclean    remove files produced by "configure" as well'
 	@echo '  distclean    revert distribution to the original status'
@@ -62,35 +64,39 @@ default :
 # If "|| exit 1" is not present, the error code from make in subdirectories
 # is not returned and make goes on even if compilation has failed
 
-pw : bindir libfft mods liblapack libblas libs libiotk 
+pw : bindir libfft libla mods liblapack libblas libs libiotk 
 	if test -d PW ; then \
 	( cd PW ; $(MAKE) TLDEPS= all || exit 1) ; fi
 
-pw-lib : bindir libfft mods liblapack libblas libs libiotk
+pw-lib : bindir libfft libla mods liblapack libblas libs libiotk
 	if test -d PW ; then \
 	( cd PW ; $(MAKE) TLDEPS= pw-lib || exit 1) ; fi
 
-cp : bindir libfft mods liblapack libblas libs libiotk
+lr-lib : bindir libfft libla mods liblapack libblas libs libiotk
+	if test -d LR_Modules ; then \
+	( cd LR_Modules ; $(MAKE) TLDEPS= all || exit 1) ; fi
+
+cp : bindir libfft libla mods liblapack libblas libs libiotk
 	if test -d CPV ; then \
 	( cd CPV ; $(MAKE) TLDEPS= all || exit 1) ; fi
 
-ph : bindir libfft mods libs pw
+ph : bindir libfft libla mods libs pw lr-lib
 	( cd install ; $(MAKE) -f plugins_makefile phonon || exit 1 )
 
-neb : bindir libfft mods libs pw
+neb : bindir libfft libla mods libs pw
 	( cd install ; $(MAKE) -f plugins_makefile $@ || exit 1 )
 
-tddfpt : bindir libfft mods libs pw ph
+tddfpt : bindir libfft libla mods libs pw
 	( cd install ; $(MAKE) -f plugins_makefile $@ || exit 1 )
 
-pp : bindir libfft mods libs pw
+pp : bindir libfft libla mods libs pw
 	if test -d PP ; then \
 	( cd PP ; $(MAKE) TLDEPS= all || exit 1 ) ; fi
 
-pwcond : bindir libfft mods libs pw pp
+pwcond : bindir libfft libla mods libs pw pp
 	( cd install ; $(MAKE) -f plugins_makefile $@ || exit 1 )
 
-acfdt : bindir libfft mods libs pw ph
+acfdt : bindir libfft libla mods libs pw ph
 	if test -d ACFDT ; then \
 	( cd ACFDT ; $(MAKE) TLDEPS= all || exit 1 ) ; fi
 
@@ -105,10 +111,10 @@ gwl : ph
 gipaw : pw
 	( cd install ; $(MAKE) -f plugins_makefile $@ || exit 1 )
 
-ld1 : bindir liblapack libblas libfft mods libs
+ld1 : bindir liblapack libblas libfft libla mods libs
 	( cd install ; $(MAKE) -f plugins_makefile $@ || exit 1 )
 
-upf : libfft mods libs liblapack libblas
+upf : libfft libla mods libs liblapack libblas
 	if test -d upftools ; then \
 	( cd upftools ; $(MAKE) TLDEPS= all || exit 1 ) ; fi
 
@@ -135,15 +141,20 @@ all   : pwall cp ld1 upf tddfpt gwl xspectra
 # compile modules, libraries, directory for binaries, etc
 ###########################################################
 
+libla : touch-dummy libelpa
+	( cd LAXlib ; $(MAKE) TLDEPS= all || exit 1 )
+
 libfft : touch-dummy
 	( cd FFTXlib ; $(MAKE) TLDEPS= all || exit 1 )
 
-mods : libiotk libelpa libfft
+mods : libiotk libla libfft
 	( cd Modules ; $(MAKE) TLDEPS= all || exit 1 )
 
 libs : mods
 	( cd clib ; $(MAKE) TLDEPS= all || exit 1 )
-	( cd flib ; $(MAKE) TLDEPS= $(FLIB_TARGETS) || exit 1 )
+
+lrmods :
+	( cd LR_Modules ; $(MAKE) TLDEPS=lr-lib || exit 1 )
 
 bindir :
 	test -d bin || mkdir bin
@@ -193,7 +204,7 @@ plumed: touch-dummy
 west: pw touch-dummy
 	( cd install ; $(MAKE) -f plugins_makefile $@ || exit 1 )
 
-epw: touch-dummy
+epw: pw ph ld1 touch-dummy
 	( cd install ; $(MAKE) -f plugins_makefile $@ || exit 1 )
 
 gpu: touch-dummy
@@ -242,10 +253,11 @@ links : bindir
 #########################################################
 
 install : touch-dummy
-	if test -d bin ; then \
-	mkdir -p $(PREFIX) ; for x in `find . -name *.x -type f` ; do \
+	@if test -d bin ; then mkdir -p $(PREFIX) ; \
+	for x in `find . -path ./test-suite -prune -o -name *.x -type f` ; do \
 		cp $$x $(PREFIX)/ ; done ; \
 	fi
+	@echo 'Quantum ESPRESSO binaries installed in $(PREFIX)'
 
 #########################################################
 # Run test-suite for numerical regression testing
@@ -262,11 +274,11 @@ test-suite: pw cp touch-dummy
 
 # remove object files and executables
 clean : doc_clean
-	touch make.sys 
+	touch make.inc 
 	for dir in \
-		CPV FFTXlib Modules PP PW \
-		ACFDT COUPLE GWW XSpectra \
-		clib flib pwtools upftools \
+		CPV LAXlib FFTXlib Modules PP PW \
+		NEB ACFDT COUPLE GWW XSpectra \
+		atomic clib LR_Modules pwtools upftools \
 		dev-tools extlibs Environ TDDFPT \
 	; do \
 	    if test -d $$dir ; then \
@@ -277,8 +289,6 @@ clean : doc_clean
 	- @(cd install ; $(MAKE) -f plugins_makefile clean)
 	- @(cd install ; $(MAKE) -f extlibs_makefile clean)
 	- /bin/rm -rf bin/*.x tmp
-	- cd PW/tests; /bin/rm -rf CRASH *.out *.out? ; cd -
-	- cd CPV/tests; /bin/rm -rf CRASH *.out *.out? 
 
 # remove files produced by "configure" as well
 veryclean : clean
@@ -286,13 +296,13 @@ veryclean : clean
 	- @(cd install ; $(MAKE) -f extlibs_makefile veryclean)
 	- rm -rf install/patch-plumed
 	- cd install ; rm -f config.log configure.msg config.status \
-	CPV/version.h ChangeLog* intel.pcl */intel.pcl
+		CPV/version.h ChangeLog* intel.pcl */intel.pcl
 	- cd install ; rm -fr autom4te.cache
 	- cd pseudo; ./clean_ps ; cd -
 	- cd install; ./clean.sh ; cd -
 	- cd include; ./clean.sh ; cd -
 	- rm -f espresso.tar.gz
-	- rm -rf make.sys
+	- rm -rf make.inc
 
 # remove everything not in the original distribution 
 distclean : veryclean
@@ -301,9 +311,9 @@ distclean : veryclean
 tar :
 	@if test -f espresso.tar.gz ; then /bin/rm espresso.tar.gz ; fi
 	# do not include unneeded stuff 
-	find ./ -type f | grep -v -e /.svn/ -e'/\.' -e'\.o$$' \
-             -e'\.mod$$' -e'\.a$$' -e'\.d$$' -e'\.i$$' -e'\.F90$$' -e'\.x$$' \
-	     -e'~$$' -e'\./GUI' -e '\./tempdir' | xargs tar rvf espresso.tar
+	find ./ -type f | grep -v -e /.svn/ -e'/\.' -e'\.o$$' -e'\.mod$$'\
+		-e /.git/ -e'\.a$$' -e'\.d$$' -e'\.i$$' -e'_tmp\.f90$$' -e'\.x$$' \
+		-e'~$$' -e'\./GUI' -e '\./tempdir' | xargs tar rvf espresso.tar
 	gzip espresso.tar
 
 #########################################################
@@ -317,6 +327,17 @@ tar-gui :
 	else \
 	    echo ; \
 	    echo "  Sorry, tar-gui works only for svn sources !!!" ; \
+	    echo ; \
+	fi
+
+tar-qe-modes :
+	@if test -d GUI/QE-modes ; then \
+	    cd GUI/QE-modes ; \
+	    $(MAKE) TLDEPS= veryclean tar; \
+	    mv QE-modes-*.tar.gz ../.. ; \
+	else \
+	    echo ; \
+	    echo "  Sorry, tar-qe-modes works only for svn sources !!!" ; \
 	    echo ; \
 	fi
 
@@ -339,7 +360,7 @@ doc_clean :
 	( if test -f $$dir/Makefile ; then \
 	( cd $$dir; $(MAKE) TLDEPS= clean ) ; fi ) ;  done
 
-depend:
+depend: libiotk mods
 	@echo 'Checking dependencies...'
 	- ( if test -x install/makedeps.sh ; then install/makedeps.sh ; fi)
 

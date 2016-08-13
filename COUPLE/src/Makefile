@@ -1,5 +1,5 @@
 # Makefile for library coupling interface
-include ../../make.sys
+include ../../make.inc
 
 # location of required modules and include files
 MODFLAGS= $(MOD_FLAG)../../iotk/src $(MOD_FLAG)../../Modules $(MOD_FLAG)../../FFTXlib $(MOD_FLAG)../../CPV/src
@@ -24,7 +24,7 @@ tldeps :
 	( cd ../.. ; $(MAKE) $(TLDEPS) || exit 1 ) ; fi
 
 clean :
-	- /bin/rm -f *.x *.o *.a *~ *.F90 *.d *.mod *.i *.L
+	- /bin/rm -f *.x *.o *.a *~ *_tmp.f90 *.d *.mod *.i *.L
 
 # we currently need to specify explicit dependencies here
 libpwscf.o: libpwscf.f90 ../../Modules/environment.o ../../Modules/mp_global.o \

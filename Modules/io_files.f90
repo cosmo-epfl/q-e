@@ -22,8 +22,6 @@ MODULE io_files
   CHARACTER(len=256) :: wfc_dir = 'undefined'
   ! ... prefix is prepended to all file (and directory) names 
   CHARACTER(len=256) :: prefix  = 'os'
-  ! address of the server for driver mode
-  CHARACTER(len=1024) :: srvaddress = 'localhost:31415' 
   ! ... for parallel case and distributed I/O: node number
   CHARACTER(len=6)   :: nd_nmbr = '000000'
   ! ... directory where pseudopotential files are found
@@ -31,11 +29,14 @@ MODULE io_files
   ! ... location of PP files after a restart from file
   CHARACTER(len=256) :: pseudo_dir_cur = ' '
   CHARACTER(len=256) :: psfile( ntypx ) = 'UPF'
-  CHARACTER(len=256) :: outdir  = './'
   !
   CHARACTER(len=256) :: qexml_version = ' '       ! the format of the current qexml datafile 
   LOGICAL            :: qexml_version_init = .FALSE.  ! whether the fmt has been read or not
   !
+#ifdef __XSD 
+  CHARACTER(LEN=256) :: qexsd_fmt = ' ', qexsd_version = ' '
+  LOGICAL            :: qexsd_init = .FALSE. 
+#endif  
   CHARACTER(LEN=256) :: input_drho = ' '          ! name of the file with the input drho
   CHARACTER(LEN=256) :: output_drho = ' '         ! name of the file with the output drho
   !
@@ -68,7 +69,6 @@ MODULE io_files
   INTEGER :: iunhub      = 13 ! unit for saving Hubbard-U atomic wfcs 
   INTEGER :: iunsat      = 14 ! unit for saving (orthogonal) atomic wfcs * S
   INTEGER :: iunmix      = 15 ! unit for saving mixing information
-  INTEGER :: iunigk      = 16 ! unit for saving indices
   !
   INTEGER :: iunexit     = 26 ! unit for a soft exit  
   INTEGER :: iunupdate   = 27 ! unit for saving old positions (extrapolation)
@@ -347,7 +347,6 @@ SUBROUTINE davcio( vect, nword, unit, nrec, io )
   ! ... direct-access vector input/output
   ! ... read/write nword words starting from the address specified by vect
   !
-  USE io_global, ONLY : stdout
   USE kinds,     ONLY : DP
   !
   IMPLICIT NONE

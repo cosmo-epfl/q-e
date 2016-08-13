@@ -59,7 +59,7 @@ program gwl_punch
   USE constants,            ONLY : rytoev
   use io_global, ONLY : stdout, ionode, ionode_id
   use io_files,  ONLY : psfile, pseudo_dir
-  use io_files,  ONLY : prefix, tmp_dir, outdir
+  use io_files,  ONLY : prefix, tmp_dir
   use ions_base, ONLY : ntype => nsp
   use iotk_module
   use mp_pools, ONLY : kunit
@@ -163,6 +163,7 @@ program gwl_punch
   logical :: found, uspp_spsi, ascii, single_file, raw
 !  INTEGER(i4b), EXTERNAL :: C_MKDIR
  CHARACTER(LEN=256), EXTERNAL :: trimcheck
+ CHARACTER(LEN=256) :: outdir
 
   NAMELIST /inputpw4gww/ prefix, outdir, pp_file, uspp_spsi, ascii, single_file, raw, &
                      psfile, pseudo_dir, &
@@ -316,7 +317,6 @@ program gwl_punch
   ! ... Broadcasting variables
 !------------------------------------------------------------------------
   tmp_dir = trimcheck( outdir )
-  CALL mp_bcast( outdir, ionode_id, world_comm )
   CALL mp_bcast( tmp_dir, ionode_id, world_comm )
   CALL mp_bcast( prefix, ionode_id, world_comm )
   CALL mp_bcast( pp_file, ionode_id, world_comm )
@@ -431,7 +431,7 @@ program gwl_punch
   call summary()
 
 !
-! init some quantities igk,....
+! init some quantities ...
 !
   CALL hinit0()
 !
@@ -516,6 +516,7 @@ subroutine read_export (pp_file,kunit,uspp_spsi, ascii, single_file, raw)
 
   use kinds,          ONLY : DP 
   use pwcom  
+  use gvecw,          ONLY : gcutw
   use control_flags,  ONLY : gamma_only  
   use becmod,         ONLY : bec_type, becp, calbec, &
                              allocate_bec_type, deallocate_bec_type
@@ -525,7 +526,7 @@ subroutine read_export (pp_file,kunit,uspp_spsi, ascii, single_file, raw)
 ! occhio sname is in symme which is now outside pwcom
   use  uspp,          ONLY : nkb, vkb
   use wavefunctions_module,  ONLY : evc
-  use io_files,       ONLY : nd_nmbr, outdir, prefix, iunwfc, nwordwfc, iunsat, nwordatwfc
+  use io_files,       ONLY : nd_nmbr, prefix, iunwfc, nwordwfc, iunsat, nwordatwfc
   use io_files,       ONLY : pseudo_dir, psfile
   use io_global,      ONLY : ionode, stdout
   USE ions_base,      ONLY : atm, nat, ityp, tau, nsp
@@ -638,7 +639,7 @@ subroutine read_export (pp_file,kunit,uspp_spsi, ascii, single_file, raw)
   do ik = 1, nks
      kisort = 0
      npw = npwx
-     call gk_sort (xk (1, ik+iks-1), ngm, g, ecutwfc / tpiba2, npw, kisort(1), g2kin)
+     call gk_sort (xk (1, ik+iks-1), ngm, g, gcutw, npw, kisort(1), g2kin)
      !
      ! mapping between local and global G vector index, for this kpoint
      !
@@ -769,10 +770,8 @@ subroutine read_export (pp_file,kunit,uspp_spsi, ascii, single_file, raw)
            local_pw = 0
            IF( (ik >= iks) .AND. (ik <= ike) ) THEN
                
-               CALL gk_sort (xk (1, ik+iks-1), ngm, g, ecutwfc / tpiba2, npw, igk, g2kin)
                CALL davcio (evc, 2*nwordwfc, iunwfc, (ik-iks+1), - 1)
-
-               CALL init_us_2(npw, igk, xk(1, ik), vkb)
+               CALL init_us_2(npw, igk_k(1,ik-iks+1), xk(1, ik), vkb)
                local_pw = ngk(ik-iks+1)
                             
                IF ( gamma_only ) THEN

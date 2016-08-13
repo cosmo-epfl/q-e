@@ -96,10 +96,10 @@ MODULE input_parameters
         CHARACTER(len=80) :: calculation = 'none'
           ! Specify the type of the simulation
           ! See below for allowed values
-        CHARACTER(len=80) :: calculation_allowed(15)
+        CHARACTER(len=80) :: calculation_allowed(14)
         DATA calculation_allowed / 'scf', 'nscf', 'relax', 'md', 'cp', &
           'vc-relax', 'vc-md', 'vc-cp', 'bands', 'neb', 'smd', 'cp-wf', &
-          'vc-cp-wf', 'cp-wf-nscf', 'driver'/
+          'vc-cp-wf', 'cp-wf-nscf'/
         CHARACTER(len=80) :: verbosity = 'default'
           ! define the verbosity of the code output
         CHARACTER(len=80) :: verbosity_allowed(6)
@@ -153,10 +153,6 @@ MODULE input_parameters
           ! specify the prefix for the output file, if not specified the
           ! files are opened as standard fortran units.
 
-        CHARACTER(len=1024) :: srvaddress = 'localhost:31415'
-          ! specify the hostname:port of the socket opened on the server side
-          ! to run in driver mode.
-          
         CHARACTER(len=256) :: pseudo_dir = './'
           ! specify the directory containing the pseudopotentials
 
@@ -214,12 +210,6 @@ MODULE input_parameters
 
         LOGICAL :: lberry = .false.
           ! if .TRUE., use modern theory of the polarization
-
-        LOGICAL :: lcalc_z2 = .false.
-          ! if .TRUE., calculate Z2 without inversion symmetry
-
-        REAL(DP) :: z2_m_threshold = 0.8d0, z2_z_threshold = 0.05d0
-          ! threshold for realizing the parallel transport gauge
 
         INTEGER :: gdir = 0
           ! G-vector for polarization calculation ( related to lberry )
@@ -286,8 +276,7 @@ MODULE input_parameters
           gdir, nppstr, wf_collect, lelfield, nberrycyc, refg,            &
           tefield2, saverho, tabps, lkpoint_dir, use_wannier, lecrpa,     &
           tqmmm, vdw_table_name, lorbm, memory, point_label_type,         &
-          lcalc_z2, z2_m_threshold, z2_z_threshold, lfcpopt, lfcpdyn,     &
-          input_xml_schema_file, srvaddress                                                  
+          lfcpopt, lfcpdyn, input_xml_schema_file                                                  
 !
 !=----------------------------------------------------------------------------=!
 !  SYSTEM Namelist Input Parameters
@@ -448,6 +437,7 @@ MODULE input_parameters
           ! Various parameters for noncollinear calculations
         LOGICAL  :: noncolin = .false.
         LOGICAL  :: lspinorb = .false.
+        LOGICAL  :: lforcet=.FALSE.
         LOGICAL  :: starting_spin_angle=.FALSE.
         REAL(DP) :: lambda = 1.0_DP
         REAL(DP) :: fixed_magnetization(3) = 0.0_DP
@@ -492,9 +482,11 @@ MODULE input_parameters
           ! other DFT-D parameters ( see Modules/mm_dispersion.f90 )
           ! london_s6 = default global scaling parameter for PBE
           ! london_c6 = user specified atomic C6 coefficients
+          ! london_rvdw = user specified atomic vdw radii
         REAL ( DP ) :: london_s6   =   0.75_DP , &
                        london_rcut = 200.00_DP , &
-                       london_c6( nsx ) = -1.0_DP
+                       london_c6( nsx ) = -1.0_DP, &
+                       london_rvdw( nsx ) = -1.0_DP
 
         LOGICAL   :: ts_vdw = .false.
           ! OBSOLESCENT: same as vdw_corr='Tkatchenko-Scheffler'
@@ -585,11 +577,11 @@ MODULE input_parameters
              exxdiv_treatment, x_gamma_extrapolation, yukawa, ecutvcut,       &
              exx_fraction, screening_parameter, ref_alat,                     &
              noncolin, lspinorb, starting_spin_angle, lambda, angle1, angle2, &
-             report,              &
+             report, lforcet,                                                 &
              constrained_magnetization, B_field, fixed_magnetization,         &
              sic, sic_epsilon, force_pairing, sic_alpha,                      &
              tot_charge, tot_magnetization, spline_ps, one_atom_occupations,  &
-             vdw_corr, london, london_s6, london_rcut, london_c6,             &
+             vdw_corr, london, london_s6, london_rcut, london_c6, london_rvdw,&
              ts_vdw, ts_vdw_isolated, ts_vdw_econv_thr,                       &
              xdm, xdm_a1, xdm_a2,                                             &
              step_pen, A_pen, sigma_pen, alpha_pen, no_t_rev,                 &
@@ -904,6 +896,12 @@ MODULE input_parameters
         LOGICAL :: tqr = .false.
           ! US contributions are added in real space
 
+        LOGICAL :: tq_smoothing = .false.
+          ! US augmentation charge is smoothed before use
+
+        LOGICAL :: tbeta_smoothing = .false.
+          ! beta function are smoothed before use
+
         LOGICAL :: occupation_constraints = .false.
           ! If true perform CP dynamics with constrained occupations
           ! to be used together with penalty functional ...
@@ -941,7 +939,8 @@ MODULE input_parameters
           diis_temp, diis_achmix, diis_g0chmix, diis_g1chmix,          &
           diis_nchmix, diis_nrot, diis_rothr, diis_ethr, diis_chguess, &
           mixing_mode, mixing_beta, mixing_ndim, mixing_fixed_ns,      &
-          tqr, diago_cg_maxiter, diago_david_ndim, diagonalization,    &
+          tqr, tq_smoothing, tbeta_smoothing,                          &
+          diago_cg_maxiter, diago_david_ndim, diagonalization,         &
           startingpot, startingwfc , conv_thr,                         &
           adaptive_thr, conv_thr_init, conv_thr_multi,                 &
           diago_thr_init, n_inner, fermi_energy, rotmass, occmass,     &
@@ -1106,6 +1105,13 @@ MODULE input_parameters
 
         REAL(DP)  :: w_1 = 0.5E-1_DP
         REAL(DP)  :: w_2 = 0.5_DP
+
+        LOGICAL :: l_mplathe=.false. !if true apply Muller Plathe strategy
+        INTEGER :: n_muller=0!number of intermediate sub-cells
+        INTEGER :: np_muller=1!period for velocity exchange
+        LOGICAL :: l_exit_muller=.false.!if true do muller exchange after last MD step
+
+        
         !
         NAMELIST / ions / ion_dynamics, iesr, ion_radius, ion_damping,         &
                           ion_positions, ion_velocities, ion_temperature,      &
@@ -1114,7 +1120,8 @@ MODULE input_parameters
                           refold_pos, upscale, delta_t, pot_extrapolation,     &
                           wfc_extrapolation, nraise, remove_rigid_rot,         &
                           trust_radius_max, trust_radius_min,                  &
-                          trust_radius_ini, w_1, w_2, bfgs_ndim
+                          trust_radius_ini, w_1, w_2, bfgs_ndim,l_mplathe,     &
+                          n_muller,np_muller,l_exit_muller
 
 
 !=----------------------------------------------------------------------------=!

@@ -19,20 +19,19 @@ SUBROUTINE openfilq()
                               lrwfc, lrdwf, lrbar, lrcom, lrdvkb3, &
                               lrdrhous, lrebar, lrdrho, lint3paw, iuint3paw
   USE io_files,        ONLY : tmp_dir, diropn, seqopn
-  USE control_ph,      ONLY : epsil, zue, ext_recover, trans, lgamma, &
+  USE control_ph,      ONLY : epsil, zue, ext_recover, trans, &
                               tmp_dir_phq, start_irr, last_irr, xmldyn, &
                               all_done
   USE save_ph,         ONLY : tmp_dir_save
   USE ions_base,       ONLY : nat
   USE cell_base,       ONLY : at
-  USE qpoint,          ONLY : xq, nksq
   USE output,          ONLY : fildyn, fildvscf
   USE wvfct,           ONLY : nbnd, npwx
   USE fft_base,        ONLY : dfftp, dffts
   USE lsda_mod,        ONLY : nspin
   USE uspp,            ONLY : nkb, okvan
   USE uspp_param,      ONLY : nhm
-  USE io_files,        ONLY : prefix, iunigk
+  USE io_files,        ONLY : prefix
   USE noncollin_module,ONLY : npol, nspin_mag
   USE paw_variables,   ONLY : okpaw
   USE control_flags,   ONLY : twfcollect
@@ -45,6 +44,9 @@ SUBROUTINE openfilq()
   USE el_phon,         ONLY : elph, elph_mat, iunwfcwann, lrwfcr
   USE dfile_star,      ONLY : dvscf_star
   USE dfile_autoname,  ONLY : dfile_name
+
+  USE qpoint,          ONLY : xq
+  USE control_lr,      ONLY : lgamma
   !
   IMPLICIT NONE
   !
@@ -131,14 +133,6 @@ SUBROUTINE openfilq()
   !
   iudrho = 23
   lrdrho = 2 * dfftp%nr1x * dfftp%nr2x * dfftp%nr3x * nspin_mag
-  !
-  !
-  !   Here the sequential files
-  !
-  !   The igk at a given k (and k+q if q!=0)
-  !
-  iunigk = 24
-  IF (nksq > 1) CALL seqopn (iunigk, 'igk', 'unformatted', exst)
   !
   !   a formatted file which contains the dynamical matrix in cartesian
   !   coordinates is opened in the current directory

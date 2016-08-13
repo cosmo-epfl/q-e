@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2015 Quantum ESPRESSO group
+! Copyright (C) 2001-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -23,9 +23,6 @@ SUBROUTINE print_clock_lr()
 #endif
    !
    IMPLICIT NONE
-   !
-   IF ( mpime /= root ) &
-      OPEN( UNIT = stdout, FILE = '/dev/null', STATUS = 'UNKNOWN' )
    !
    WRITE( stdout, * )
    !
@@ -60,11 +57,14 @@ SUBROUTINE print_clock_lr()
    !
    CALL print_clock( 'h_psi' )
    CALL print_clock( 'lr_calc_dens' )
+   IF (eels) CALL print_clock( 'incdrhoscf' )
    CALL print_clock( 'lr_dvpsi_e' )
    CALL print_clock( 'lr_dv_setup' )
-   CALL print_clock( 'lr_ortho' )
+   CALL print_clock( 'dv_of_drho' )
    CALL print_clock( 'interaction' )
    CALL print_clock( 'lr_dot' )
+   CALL print_clock( 'ortho' )
+   IF (davidson) CALL print_clock( 'lr_ortho' )
    !
    WRITE( stdout, * ) 
    CALL print_clock( 'lr_exx_int')
@@ -76,13 +76,17 @@ SUBROUTINE print_clock_lr()
    CALL print_clock( 's_psi' )
    CALL print_clock( 'sd0psi' )
    CALL print_clock( 'lr_apply_s' )
-   CALL print_clock( 'lr_sm1_psi' )
    CALL print_clock( 'lr_dot_us' )
    IF (eels) THEN
     CALL print_clock( 'addusdbec' )
     CALL print_clock( 'addusdbec_nc' )
     CALL print_clock( 'lr_addusddens' )
     CALL print_clock( 'lr_addus_dvpsi' )
+   ENDIF
+   IF (eels) THEN
+      CALL print_clock( 'lr_sm1_psiq' )
+   ELSE
+      CALL print_clock( 'lr_sm1_psi' )
    ENDIF
    !
    IF (real_space_debug>0) THEN
@@ -147,7 +151,6 @@ SUBROUTINE print_clock_lr()
       CALL print_clock( 'lr_psym_eels' )
       CALL print_clock( 'lr_smallgq' )
       CALL print_clock( 'lr_summary' )
-      CALL print_clock( 'lr_dv_of_drho_eels' )
       WRITE( stdout, * )
       !
    ENDIF

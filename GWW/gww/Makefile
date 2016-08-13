@@ -1,18 +1,17 @@
 # Makefile for GWW
 # Author: G. Stenuit and L. Martin-Samos
 #
-include ../../make.sys
+include ../../make.inc
 
 # location of include files
 IFLAGS=
 
 # location of needed modules
 MODFLAGS= $(MOD_FLAG)../../iotk/src $(MOD_FLAG)../../Modules \
-          $(MOD_FLAG)../../FFTXlib $(MOD_FLAG)../pw4gww $(MOD_FLAG).
+          $(MOD_FLAG)../../FFTXlib $(MOD_FLAG)../../LAXlib $(MOD_FLAG)../pw4gww $(MOD_FLAG).
 
 #location of needed libraries
-LIBOBJS= ../../iotk/src/libiotk.a ../../flib/flib.a \
-         ../../clib/clib.a ../../flib/ptools.a 
+LIBOBJS= ../../iotk/src/libiotk.a ../../clib/clib.a 
 
 GWWOBJS = \
 basic_structures.o \
@@ -50,7 +49,7 @@ times_gw.o \
 vcprim.o 
 
 
-QEMODS = ../../Modules/libqemod.a ../../FFTXlib/libqefft.a
+QEMODS = ../../Modules/libqemod.a ../../FFTXlib/libqefft.a ../../LAXlib/libqela.a
 
 LIBMIN= ../minpack/minpacklib.a
 
@@ -76,7 +75,7 @@ tldeps :
 	( cd ../.. ; $(MAKE) $(TLDEPS) || exit 1 ) ; fi
 
 clean :
-	- /bin/rm -f -v gww.x gww_fit.x *.o *~ *.F90 *.d *.mod *.i *.a
+	- /bin/rm -f -v gww.x gww_fit.x *.o *~ *_tmp.f90 *.d *.mod *.i *.a
 
 include make.depend
 

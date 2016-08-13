@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2015 Quantum ESPRESSO group
+! Copyright (C) 2001-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -9,7 +9,7 @@
 SUBROUTINE lr_ortho(dvpsi, evq, ikk, ikq, sevc, inverse)
   !---------------------------------------------------------------------
   !
-  ! Inspired by PH/orthogonalize.f90
+  ! Inspired by LR_Modules/orthogonalize.f90
   ! This routine ortogonalizes dvpsi to the valence states.
   ! It should be quite general. It works for metals and insulators, with 
   ! NC as well as with US PP, both SR or FR.
@@ -25,21 +25,29 @@ SUBROUTINE lr_ortho(dvpsi, evq, ikk, ikq, sevc, inverse)
   ! evc0 -> evq 
   ! sevc0 -> sevc
   !
+  ! Note: S^{-1} P_c^+(k) = P_c(k) S^{-1}
+  !
+  ! This subroutine is a modified version of the the subroutine
+  ! orthogonalize.f90. This subroutine should be removed in the future,
+  ! and orthogonalize.f90 should be used instead. Currently this 
+  ! subroutine is used only in several places in lr_dav_routines.f90.
+  ! TODO: Check if lr_ortho can be replaced by orthogonalize in
+  ! lr_dav_routines.
+  !
   ! Modified by Osman Baris Malcioglu (2009)
   ! Modified by Iurii Timrov (2013)
   !
   USE kinds,             ONLY : DP
   use gvect,             only : gstart
-  USE klist,             ONLY : lgauss, degauss, ngauss
+  USE klist,             ONLY : ngk, lgauss, degauss, ngauss
   USE noncollin_module,  ONLY : noncolin, npol
   USE wvfct,             ONLY : npwx, nbnd, et
   USE ener,              ONLY : ef
-  USE control_ph,        ONLY : alpha_pv, nbnd_occ
+  USE control_lr,        ONLY : alpha_pv, nbnd_occ
   USE uspp,              ONLY : vkb, okvan
   USE mp_global,         ONLY : intra_bgrp_comm
   USE mp,                ONLY : mp_sum
   use lr_variables,      ONLY : lr_verbosity
-  use realus,            ONLY : npw_k
   use control_flags,     only : gamma_only
   USE io_global,         ONLY : stdout
   !
@@ -103,10 +111,10 @@ SUBROUTINE lr_ortho_k()
        !
        ps = (0.d0, 0.d0)
        IF (inverse_mode) THEN
-          CALL ZGEMM( 'C', 'N', nbnd, nbnd_occ(ikk), npw_k(ikk), (1.d0,0.d0), &
+          CALL ZGEMM( 'C', 'N', nbnd, nbnd_occ(ikk), ngk(ikk), (1.d0,0.d0), &
                       sevc, npwx, dvpsi, npwx, (0.d0,0.d0), ps, nbnd )
        ELSE
-          CALL ZGEMM( 'C', 'N', nbnd, nbnd_occ(ikk), npw_k(ikk), (1.d0,0.d0), &
+          CALL ZGEMM( 'C', 'N', nbnd, nbnd_occ(ikk), ngk(ikk), (1.d0,0.d0), &
                       evq, npwx, dvpsi, npwx, (0.d0,0.d0), ps, nbnd )
        ENDIF
        !
@@ -133,7 +141,7 @@ SUBROUTINE lr_ortho_k()
              ps(jbnd,ibnd) = wwg * ps(jbnd,ibnd)
              !
           ENDDO
-          CALL DSCAL (2*npw_k(ikk), wg1, dvpsi(1,ibnd), 1)
+          CALL DSCAL (2*ngk(ikk), wg1, dvpsi(1,ibnd), 1)
        ENDDO
        !
        nbnd_eff = nbnd
@@ -148,7 +156,7 @@ SUBROUTINE lr_ortho_k()
          !
          ! ps = <sevc|dvpsi>
          !
-         CALL ZGEMM( 'C', 'N', nbnd_occ(ikq), nbnd_occ (ikk), npw_k(ikk), &
+         CALL ZGEMM( 'C', 'N', nbnd_occ(ikq), nbnd_occ (ikk), ngk(ikk), &
                    (1.d0,0.d0), sevc, npwx, dvpsi, npwx, &
                    (0.d0,0.d0), ps, nbnd )
          !
@@ -156,7 +164,7 @@ SUBROUTINE lr_ortho_k()
          !
          ! ps = <evq|dvpsi>
          !
-         CALL ZGEMM( 'C', 'N', nbnd_occ(ikq), nbnd_occ (ikk), npw_k(ikk), &
+         CALL ZGEMM( 'C', 'N', nbnd_occ(ikq), nbnd_occ (ikk), ngk(ikk), &
                    (1.d0,0.d0), evq, npwx, dvpsi, npwx, &
                    (0.d0,0.d0), ps, nbnd )
       ENDIF
@@ -174,11 +182,11 @@ SUBROUTINE lr_ortho_k()
       !  Metallic case
       !
       if (inverse_mode) then
-         CALL ZGEMM( 'N', 'N', npw_k(ikk), nbnd_occ(ikk), nbnd, &
+         CALL ZGEMM( 'N', 'N', ngk(ikk), nbnd_occ(ikk), nbnd, &
                    (-1.d0,0.d0), evq, npwx, ps, nbnd, (1.0d0,0.d0), &
                    dvpsi, npwx )
       else
-         CALL ZGEMM( 'N', 'N', npw_k(ikk), nbnd_occ(ikk), nbnd, &
+         CALL ZGEMM( 'N', 'N', ngk(ikk), nbnd_occ(ikk), nbnd, &
                    (-1.d0,0.d0), sevc, npwx, ps, nbnd, (1.0d0,0.d0), &
                    dvpsi, npwx )
       endif
@@ -191,7 +199,7 @@ SUBROUTINE lr_ortho_k()
          !
          ! |dvspi> =  |dvpsi> - |evq><sevc|dvpsi>
          !
-         CALL ZGEMM( 'N', 'N', npw_k(ikk), nbnd_occ(ikk), nbnd_occ(ikk), &
+         CALL ZGEMM( 'N', 'N', ngk(ikk), nbnd_occ(ikk), nbnd_occ(ikk), &
                    (-1.d0,0.d0), evq, npwx, ps, nbnd, (1.0d0,0.d0), &
                    dvpsi, npwx )
          !
@@ -199,7 +207,7 @@ SUBROUTINE lr_ortho_k()
          !
          ! |dvspi> =  |dvpsi> - |sevc><evq|dvpsi>
          !
-         CALL ZGEMM( 'N', 'N', npw_k(ikk), nbnd_occ(ikk), nbnd_occ(ikk), &
+         CALL ZGEMM( 'N', 'N', ngk(ikk), nbnd_occ(ikk), nbnd_occ(ikk), &
                    (-1.d0,0.d0), sevc, npwx, ps, nbnd, (1.0d0,0.d0), &
                    dvpsi, npwx )
          !
@@ -242,14 +250,14 @@ SUBROUTINE lr_ortho_gamma()
          ! 
          ! ps = 2 * <sevc|dvpsi>
          !
-         CALL DGEMM( 'C', 'N', nbnd, nbnd ,2*npw_k(1), &
+         CALL DGEMM( 'C', 'N', nbnd, nbnd ,2*ngk(1), &
                2.d0, sevc, 2*npwx, dvpsi, 2*npwx, 0.d0, ps, nbnd )
          !
       ELSE
          !
          ! ps = 2 * <evq|dvpsi>
          !
-         CALL DGEMM( 'C', 'N', nbnd, nbnd ,2*npw_k(1), &
+         CALL DGEMM( 'C', 'N', nbnd, nbnd ,2*ngk(1), &
                2.d0, evq, 2*npwx, dvpsi, 2*npwx, 0.d0, ps, nbnd )
          !
       ENDIF
@@ -301,14 +309,14 @@ SUBROUTINE lr_ortho_gamma()
         !
         ! |dvpsi> = |dvpsi> - |evq><sevc|dvpsi>
         !
-        CALL ZGEMM( 'N', 'N', npw_k(1), nbnd, nbnd, &
+        CALL ZGEMM( 'N', 'N', ngk(1), nbnd, nbnd, &
                   (-1.d0,0.d0), evq, npwx, ps_c, nbnd, (1.0d0,0.d0), dvpsi, npwx)
         !
      ELSE
         !
         ! |dvpsi> = |dvpsi> - |sevc><evq|dvpsi>
         !
-        CALL ZGEMM( 'N', 'N', npw_k(1), nbnd, nbnd, &
+        CALL ZGEMM( 'N', 'N', ngk(1), nbnd, nbnd, &
                   (-1.d0,0.d0), sevc, npwx, ps_c, nbnd, (1.0d0,0.d0), dvpsi, npwx )
         !
      ENDIF

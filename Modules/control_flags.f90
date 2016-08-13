@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2002-2011 Quantum ESPRESSO group
+! Copyright (C) 2002-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -38,7 +38,7 @@ MODULE control_flags
             timing, memchk, trane, dt_old, ampre, tranp, amprp,              &
             tnosee, tnosep, tnoseh, tcp, tcap,                               &
             tconvthrs, tolp, convergence_criteria, tionstep, nstepe,         &
-            tscreen, gamma_only, force_pairing, lecrpa, tddfpt,  smallmem
+            tscreen, gamma_only, force_pairing, lecrpa, tddfpt, smallmem
   !
   PUBLIC :: fix_dependencies, check_flags
   PUBLIC :: tksw, trhor, thdyn, trhow
@@ -76,7 +76,7 @@ MODULE control_flags
   LOGICAL :: lkpoint_dir   = .TRUE.  ! save each k point in a different directory
   LOGICAL :: force_pairing = .FALSE. ! Force pairing
   LOGICAL :: lecrpa        = .FALSE. ! RPA correlation energy request
-  LOGICAL :: tddfpt        = .FALSE. ! use tddfpt specific tweaks to ph.x routines
+  LOGICAL :: tddfpt        = .FALSE. ! use TDDFPT specific tweaks when using the Environ plugin
   LOGICAL :: smallmem      = .FALSE. ! the memory per task is small
   !
   TYPE (convergence_criteria) :: tconvthrs
@@ -153,7 +153,6 @@ MODULE control_flags
     lscf    =.FALSE., &! if .TRUE. the calc. is selfconsistent
     lbfgs   =.FALSE., &! if .TRUE. the calc. is a relaxation based on BFGS
     lmd     =.FALSE., &! if .TRUE. the calc. is a dynamics
-    ldriver =.FALSE., &! if .TRUE. the calc. is a driver run    
     lwf     =.FALSE., &! if .TRUE. the calc. is with wannier functions
     !=================================================================
     !exx_wf related 
@@ -174,9 +173,12 @@ MODULE control_flags
     niter,            &! the maximum number of iteration
     nmix,             &! the number of iteration kept in the history
     imix               ! the type of mixing (0=plain,1=TF,2=local-TF)
-  REAL(DP), PUBLIC  :: &
+  INTEGER,  PUBLIC :: &
+    n_scf_steps        ! number of scf iterations to reach convergence
+  REAL(DP), PUBLIC :: &
     mixing_beta,      &! the mixing parameter
-    tr2                ! the convergence threshold for potential
+    tr2,              &! the convergence threshold for potential
+    scf_error=0.0      ! actual convergence reached
 
   LOGICAL, PUBLIC :: &
     conv_elec          ! if .TRUE. electron convergence has been reached
@@ -254,6 +256,11 @@ MODULE control_flags
   LOGICAL,          PUBLIC :: tqr=.FALSE. ! if true the Q are in real space
 
   !LOGICAL,          PUBLIC :: real_space=.false. ! beta functions in real space
+  !
+  ! ... Augmetation charge and beta smoothing
+  !
+  LOGICAL,          PUBLIC :: tq_smoothing=.FALSE. ! if true the Q are smoothed 
+  LOGICAL,          PUBLIC :: tbeta_smoothing=.FALSE. ! if true the betas are smoothed 
   !
   ! ... External Forces on Ions
   !

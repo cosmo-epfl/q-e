@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2013 Quantum ESPRESSO group
+! Copyright (C) 2001-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -36,16 +36,15 @@ SUBROUTINE phq_readin()
   USE spin_orb,      ONLY : domag
   USE cellmd,        ONLY : lmovecell
   USE run_info, ONLY : title
-  USE control_ph,    ONLY : maxter, alpha_mix, lgamma, lgamma_gamma, epsil, &
+  USE control_ph,    ONLY : maxter, alpha_mix, lgamma_gamma, epsil, &
                             zue, zeu, xmldyn, newgrid,                      &
                             trans, reduce_io, tr2_ph, niter_ph,       &
-                            nmix_ph, ldisp, recover, lrpa, lnoloc, start_irr, &
+                            nmix_ph, ldisp, recover, lnoloc, start_irr, &
                             last_irr, start_q, last_q, current_iq, tmp_dir_ph, &
                             ext_recover, ext_restart, u_from_file, ldiag, &
                             search_sym, lqdir, electron_phonon
   USE save_ph,       ONLY : tmp_dir_save
   USE gamma_gamma,   ONLY : asr
-  USE qpoint,        ONLY : nksq, xq
   USE partial,       ONLY : atomo, nat_todo, nat_todo_input
   USE output,        ONLY : fildyn, fildvscf, fildrho
   USE disp,          ONLY : nq1, nq2, nq3
@@ -70,6 +69,10 @@ SUBROUTINE phq_readin()
   USE wannier_gw,    ONLY : l_head, omega_gauss, n_gauss, grid_type, nsteps_lanczos,second_grid_n,second_grid_i,&
                                 &l_scissor,scissor, len_head_block_freq, len_head_block_wfc
   USE save_ph, ONLY : save_ph_input_variables
+
+  USE qpoint,        ONLY : nksq, xq
+  USE control_lr,    ONLY : lgamma, lrpa
+
  !
   IMPLICIT NONE
   !

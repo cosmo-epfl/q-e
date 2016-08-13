@@ -19,6 +19,7 @@
   USE lsda_mod,ONLY : nspin
   USE units_ph, ONLY : iudrho, lrdrho
   USE output,   ONLY : fildrho
+  USE dv_of_drho_lr
   implicit none
 
   complex(DP) :: dvscfs (dffts%nnr,3)
@@ -38,7 +39,7 @@
      !
      ! Calculates the local part of the scf potential
      !
-     call dv_of_drho (0, derho (1, 1), .false.)
+     call dv_of_drho (derho (1, 1), .false.)
      !
      if (doublegrid) then
         call cinterpolate (derho (1, 1), dvscfs (1, ipl), -1)

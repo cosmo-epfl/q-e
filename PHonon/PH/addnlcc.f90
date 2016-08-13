@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001 PWSCF group
+! Copyright (C) 2001-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -13,7 +13,7 @@ subroutine addnlcc (imode0, drhoscf, npe)
 
   USE kinds, only : DP
   USE ions_base, ONLY : nat
-  use funct, only : dft_is_gradient
+  use funct, only : dft_is_gradient, dft_is_nonlocc
   USE cell_base, ONLY : omega, alat
   use scf, only : rho, rho_core
   USE gvect, ONLY : g, ngm, nl
@@ -21,13 +21,14 @@ subroutine addnlcc (imode0, drhoscf, npe)
   USE noncollin_module, ONLY : nspin_lsda, nspin_gga, nspin_mag
   USE dynmat, ONLY : dyn, dyn_rec
   USE modes,  ONLY : nirr, npert
-  USE gc_ph,   ONLY: grho,  dvxc_rr,  dvxc_sr,  dvxc_ss, dvxc_s
-  USE eqv,    ONLY : dmuxc
-  USE nlcc_ph, ONLY : nlcc_any
-  USE qpoint, ONLY : xq
+  USE uspp,   ONLY : nlcc_any
 
   USE mp_bands,  ONLY: intra_bgrp_comm
   USE mp,        ONLY: mp_sum
+
+  USE qpoint,  ONLY : xq
+  USE eqv,     ONLY : dmuxc
+  USE gc_lr,   ONLY: grho,  dvxc_rr,  dvxc_sr,  dvxc_ss, dvxc_s
 
   implicit none
 
@@ -101,6 +102,9 @@ subroutine addnlcc (imode0, drhoscf, npe)
        call dgradcorr (rho%of_r, grho, dvxc_rr, dvxc_sr, dvxc_ss, dvxc_s, xq, &
           drhoscf (1, 1, ipert), dfftp%nnr, nspin_mag, nspin_gga, nl, ngm, g, alat,&
           dvaux)
+     if (dft_is_nonlocc()) &
+       call dnonloccorr(rho%of_r, drhoscf (1, 1, ipert), xq, dvaux)
+
      do is = 1, nspin_lsda
         call daxpy (2 * dfftp%nnr, - fac, drhoc, 1, drhoscf (1, is, ipert), 1)
      enddo

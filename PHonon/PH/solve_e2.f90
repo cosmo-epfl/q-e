@@ -16,22 +16,19 @@ subroutine solve_e2
   USe kinds,                 ONLY : DP
   USE io_global,             ONLY : stdout
   USE cell_base,             ONLY : tpiba2
-  USE klist,                 ONLY : lgauss, wk, xk
+  USE klist,                 ONLY : lgauss, wk, xk, ngk, igk_k
   USE lsda_mod,              ONLY : lsda, nspin
   USE gvect,                 ONLY : g
   USE gvecs,                 ONLY : doublegrid
   USE fft_base,              ONLY : dfftp, dffts
-  USE wvfct,                 ONLY : npw, npwx, nbnd, igk, g2kin, et
-  USE io_files,  ONLY: prefix, iunigk
+  USE wvfct,                 ONLY : npwx, nbnd, et
   USE buffers,   ONLY: get_buffer
   USE ions_base, ONLY: nat
   USE uspp,      ONLY: okvan, nkb, vkb
   USE uspp_param,ONLY : nhm
   USE wavefunctions_module,  ONLY: evc
-  USE eqv,       ONLY : dpsi, dvpsi
-  USE qpoint,    ONLY : npwq, igkq, nksq
-  USE control_ph, ONLY : convt, nmix_ph, alpha_mix, nbnd_occ, tr2_ph, &
-                         niter_ph, lgamma, rec_code, flmixdpot, rec_code_read
+  USE control_ph, ONLY : convt, nmix_ph, alpha_mix, tr2_ph, &
+                         niter_ph, rec_code, flmixdpot, rec_code_read
   USE units_ph,   ONLY : lrwfc, iuwfc
   USE ramanm,     ONLY : lrba2, iuba2, lrd2w, iud2w
   USE recover_mod, ONLY : read_rec, write_rec
@@ -40,6 +37,12 @@ subroutine solve_e2
   USE mp_pools,   ONLY : inter_pool_comm
   USE mp_bands,   ONLY : intra_bgrp_comm
   USE mp,         ONLY : mp_sum
+
+  USE eqv,       ONLY : dpsi, dvpsi
+  USE qpoint,    ONLY : nksq, ikks, ikqs
+  USE control_lr, ONLY : nbnd_occ, lgamma
+  USE dv_of_drho_lr
+
   implicit none
 
   real(DP) ::  thresh, weight, avg_iter, dr2
@@ -62,6 +65,7 @@ subroutine solve_e2
   logical :: exst
   ! used to open the recover file
 
+  integer :: npw, npwq, ikk, ikq
   integer :: kter, iter0, ipol, ibnd, iter, ik, is, ig, iig, irr, ir, nrec, ios
   ! counter on iterations
   ! counter on perturbations
@@ -73,8 +77,6 @@ subroutine solve_e2
   ! counter on mesh points
   ! the record number
   ! integer variable for I/O control
-
-  external ch_psi_all, cg_psi
 
   if (lsda) call errore ('solve_e2', ' LSDA not implemented', 1)
   if (okvan) call errore ('solve_e2', ' Ultrasoft PP not implemented', 1)
@@ -111,28 +113,23 @@ subroutine solve_e2
 
      dvscfout (:,:,:) = (0.d0, 0.d0)
      dbecsum (:,:) = (0.d0, 0.d0)
-     if (nksq.gt.1) rewind (unit = iunigk)
 
      do ik = 1, nksq
-        if (nksq.gt.1) then
-           read (iunigk, err = 100, iostat = ios) npw, igk
-100        call errore ('solve_e2', 'reading igk', abs (ios) )
-        endif
+        ! in this routine, ikk=ikq=ik always (q=0)
+        ikk = ikks(ik)
+        ikq = ikqs(ik)
         !
-        ! reads unperturbed wavefuctions psi_k in G_space, for all bands
+        ! reads unperturbed wavefunctions psi_k in G_space, for all bands
         !
-        if (nksq.gt.1) call get_buffer(evc, lrwfc, iuwfc, ik)
-        npwq = npw
-        call init_us_2 (npw, igk, xk (1, ik), vkb)
+        if (nksq.gt.1) call get_buffer(evc, lrwfc, iuwfc, ikk)
+        npw = ngk(ikk)
+        npwq= ngk(ikq)
         !
-        ! compute the kinetic energy
+        ! compute beta functions and kinetic energy for k-point ikk
+        ! needed by h_psi, called by pcgreen
         !
-        do ig = 1, npwq
-           iig = igkq (ig)
-           g2kin (ig) = ( (xk (1, ik) + g (1, iig) ) **2 + &
-                          (xk (2, ik) + g (2, iig) ) **2 + &
-                          (xk (3, ik) + g (3, iig) ) **2 ) * tpiba2
-        enddo
+        CALL init_us_2 (npw, igk_k(1,ikk), xk (1, ikk), vkb)
+        CALL g2_kin(ikk)
         !
         ! The counter on the polarizations runs only on the 6 inequivalent
         ! indexes --see the comment on raman.F--
@@ -153,11 +150,11 @@ subroutine solve_e2
            else
               call davcio (dvpsi, lrba2, iuba2, nrec, -1)
               do ibnd = 1, nbnd_occ (ik)
-                 call cft_wave (evc (1, ibnd), aux1, +1)
+                 call cft_wave (ik, evc (1, ibnd), aux1, +1)
                  do ir = 1, dffts%nnr
                     aux1 (ir) = aux1 (ir) * dvscfins (ir, 1, ipol)
                  enddo
-                 call cft_wave (dvpsi (1, ibnd), aux1, -1)
+                 call cft_wave (ik, dvpsi (1, ibnd), aux1, -1)
               enddo
               thresh = min (0.1d0 * sqrt(dr2), 1.0d-2)
            endif
@@ -181,16 +178,13 @@ subroutine solve_e2
            enddo
         enddo
      endif
-
-!     call addusddense (dvscfout, dbecsum)
-
      !
      !   After the loop over the perturbations we have the change of the pote
      !   for all the modes, and we symmetrize this potential
      !
      call mp_sum ( dvscfout, inter_pool_comm )
      do ipol = 1, 6
-        call dv_of_drho (0, dvscfout (1, 1, ipol), .false.)
+        call dv_of_drho (dvscfout (1, 1, ipol), .false.)
      enddo
 
      call psyme2(dvscfout)

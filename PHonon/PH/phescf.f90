@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2009 Quantum ESPRESSO group
+! Copyright (C) 2001-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -20,12 +20,14 @@ SUBROUTINE phescf()
   USE noncollin_module,ONLY : noncolin, nspin_mag
   USE lsda_mod,        ONLY : nspin
   USE control_ph,      ONLY : convt, zeu, rec_code, rec_code_read, lnoloc, &
-                              lrpa, where_rec, done_epsil, done_zeu, epsil
+                              where_rec, done_epsil, done_zeu, epsil
   USE output,          ONLY : fildrho
   USE ph_restart,      ONLY : ph_writefile
-  USE phus,            ONLY : int3, int3_nc, int3_paw
   USE freq_ph
   USE ramanm,          ONLY : ramtns, lraman, elop, done_lraman, done_elop
+
+  USE lrus,            ONLY : int3, int3_nc, int3_paw
+  USE control_lr,      ONLY : lrpa
   !
   IMPLICIT NONE
   !
@@ -41,9 +43,9 @@ SUBROUTINE phescf()
   ENDIF
   !
   IF (okvan) THEN
-     ALLOCATE (int3 ( nhm, nhm, 3, nat, nspin_mag))
-     IF (okpaw) ALLOCATE (int3_paw ( nhm, nhm, 3, nat, nspin_mag))
-     IF (noncolin) ALLOCATE(int3_nc( nhm, nhm, 3, nat, nspin))
+     ALLOCATE (int3 ( nhm, nhm, nat, nspin_mag, 3))
+     IF (okpaw) ALLOCATE (int3_paw ( nhm, nhm, nat, nspin_mag, 3))
+     IF (noncolin) ALLOCATE(int3_nc( nhm, nhm, nat, nspin, 3))
   ENDIF
   !
   IF (fpol) THEN    ! calculate freq. dependent polarizability

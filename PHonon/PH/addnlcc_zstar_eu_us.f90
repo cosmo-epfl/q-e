@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2004 PWSCF group
+! Copyright (C) 2001-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -11,21 +11,21 @@ SUBROUTINE addnlcc_zstar_eu_us( drhoscf )
 !----------===================-------------------
 
   USE kinds, ONLY : DP
-  USE funct, only : dft_is_gradient
+  USE funct, only : dft_is_gradient, dft_is_nonlocc
   USE scf, only : rho, rho_core
   USE cell_base, ONLY : omega, alat
   USE gvect, ONLY : ngm, nl, g
   USE fft_base, ONLY : dfftp
   USE noncollin_module, ONLY : nspin_lsda, nspin_gga, nspin_mag
   USE efield_mod, ONLY : zstareu0
-  USE qpoint, ONLY : xq
-  USE nlcc_ph, ONLY : nlcc_any
+  USE uspp,   ONLY : nlcc_any
   USE modes,  ONLY : npert, nirr
-  USE eqv,    ONLY : dmuxc
-  USE gc_ph,   ONLY: grho, dvxc_rr,  dvxc_sr,  dvxc_ss, dvxc_s
 
   USE mp_pools, ONLY : my_pool_id
 
+  USE qpoint, ONLY : xq
+  USE eqv,     ONLY : dmuxc
+  USE gc_lr,   ONLY: grho, dvxc_rr,  dvxc_sr,  dvxc_ss, dvxc_s
 
   IMPLICIT NONE
 
@@ -81,6 +81,8 @@ SUBROUTINE addnlcc_zstar_eu_us( drhoscf )
                 CALL dgradcorr (rho%of_r, grho, &
                     dvxc_rr, dvxc_sr, dvxc_ss, dvxc_s, xq, drhoscf (1,1,ipert),&
                     dfftp%nnr, nspin_mag, nspin_gga, nl, ngm, g, alat, dvaux)
+           if (dft_is_nonlocc()) &
+                call dnonloccorr(rho%of_r, drhoscf (1, 1, ipert), xq, dvaux)
 
            DO is = 1, nspin_lsda
               rho%of_r(:,is) = rho%of_r(:,is) - fac * rho_core

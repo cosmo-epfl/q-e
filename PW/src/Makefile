@@ -1,9 +1,9 @@
 # Makefile for PW
 
-include ../../make.sys
+include ../../make.inc
 
 # location of needed modules and included files (if any)
-MODFLAGS= $(MOD_FLAG)../../iotk/src $(MOD_FLAG)../../Modules $(MOD_FLAG)../../FFTXlib
+MODFLAGS= $(MOD_FLAG)../../iotk/src $(MOD_FLAG)../../Modules $(MOD_FLAG)../../FFTXlib $(MOD_FLAG)../../LAXlib
 IFLAGS=
 
 PWOBJS = \
@@ -66,9 +66,6 @@ divide.o \
 divide_et_impera.o \
 dqvan2.o \
 drhoc.o \
-fsockets.o \
-driver.o \
-sockets.o \
 dvloc_of_g.o \
 dynamics_module.o \
 efermig.o \
@@ -111,6 +108,8 @@ hinit1.o \
 init_ns.o \
 init_q_aeps.o \
 init_run.o \
+init_us_0.o \
+init_us_b0.o \
 init_us_1.o \
 init_us_2.o \
 init_at_1.o \
@@ -165,6 +164,8 @@ print_clock_pw.o \
 print_ks_energies.o \
 punch.o \
 pw_restart.o \
+add_qexsd_step.o \
+pw_init_qexsd_input.o \
 pwcom.o \
 pw2blip.o \
 pw2casino.o \
@@ -196,7 +197,6 @@ set_kup_and_kdw.o \
 set_rhoc.o \
 set_vrs.o \
 setlocal.o \
-setqf.o \
 setup.o \
 spinor.o \
 sph_ind.o \
@@ -249,11 +249,11 @@ wannier_occ.o \
 wannier_enrg.o \
 wyckoff.o       
 
-QEMODS=../../Modules/libqemod.a ../../FFTXlib/libqefft.a
+QEMODS=../../Modules/libqemod.a ../../FFTXlib/libqefft.a ../../LAXlib/libqela.a
 
 TLDEPS=bindir mods libs liblapack libblas
 
-LIBOBJS	= ../../flib/ptools.a ../../flib/flib.a ../../clib/clib.a ../../iotk/src/libiotk.a
+LIBOBJS	= ../../clib/clib.a ../../iotk/src/libiotk.a
 
 all : tldeps pw.x manypw.x generate_vdW_kernel_table.x generate_rVV10_kernel_table.x
 
@@ -276,7 +276,7 @@ tldeps :
 	( cd ../.. ; $(MAKE) $(TLDEPS) || exit 1 ) ; fi
 
 clean :
-	- /bin/rm -f *.x *.o *.a *~ *.F90 *.d *.mod *.i *.L
+	- /bin/rm -f *.x *.o *.a *~ *_tmp.f90 *.d *.mod *.i *.L
 
 generate_vdW_kernel_table.x : libpw.a generate_vdW_kernel_table.o
 	$(LD) $(LDFLAGS) -o $@ \

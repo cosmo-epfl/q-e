@@ -14,7 +14,8 @@
 !  ... initialize FFT descriptors for both dense and smooth grids
 
       USE stick_base
-      USE fft_types, ONLY: fft_dlay_descriptor, fft_dlay_allocate, &
+      USE fft_types, ONLY: fft_dlay_descriptor, fft_dlay_set_dims, &
+                           fft_dlay_allocate, fft_dlay_deallocate, &
                            fft_dlay_set, fft_dlay_scalar
 
       IMPLICIT NONE
@@ -32,7 +33,9 @@
 
       SUBROUTINE pstickset( gamma_only, bg, gcut, gkcut, gcuts, &
           dfftp, dffts, ngw, ngm, ngs, mype, root, nproc, comm, nogrp_ , &
-          ionode, stdout, dfft3d )
+          ionode, stdout, dtgs, dfft3d )
+
+          USE task_groups, ONLY: task_groups_descriptor, task_groups_init
 
           LOGICAL, INTENT(in) :: gamma_only
 ! ...     bg(:,1), bg(:,2), bg(:,3) reciprocal space base vectors.
@@ -46,8 +49,8 @@
           LOGICAL, INTENT(IN) :: ionode
           INTEGER, INTENT(IN) :: stdout
 
+          TYPE(task_groups_descriptor), OPTIONAL, INTENT(inout) :: dtgs
           TYPE(fft_dlay_descriptor), OPTIONAL, INTENT(inout) :: dfft3d
-
 
           LOGICAL :: tk
 
@@ -117,8 +120,16 @@
 
 
         INTEGER, ALLOCATABLE :: ist(:,:)    ! sticks indices ordered
-          INTEGER :: ip, ngm_ , ngs_
-          INTEGER, ALLOCATABLE :: idx(:)
+        INTEGER :: ip, ngm_ , ngs_, ipg
+        INTEGER, ALLOCATABLE :: idx(:)
+
+!
+! fft descriptors are initialized in this routine even if they were already defined previously !
+! therefore they are preliminarily cleaned (auxiliary arrays deallocated, logical flags reset) 
+! to avoid memory leaks and confusion 
+!
+       CALL fft_dlay_deallocate ( dffts ) ;  CALL fft_dlay_deallocate ( dfftp )
+       if (present(dfft3d) ) CALL fft_dlay_deallocate( dfft3d )
 
           tk    = .not. gamma_only
           ub(1) = ( dfftp%nr1 - 1 ) / 2
@@ -180,7 +191,7 @@
           !  idx( iss ) = itmp
 
           CALL sticks_dist( tk, ub, lb, idx, ist(:,1), ist(:,2), ist(:,4), ist(:,3), ist(:,5), &
-             nst, nstp, nstpw, nstps, sstp, sstpw, sstps, st, stw, sts, nproc )
+             nst, nstp, nstpw, nstps, sstp, sstpw, sstps, st, stw, sts, mype, nproc )
 
           ngw = sstpw( mype + 1 )
           ngm = sstp( mype + 1 )
@@ -193,38 +204,40 @@
 
 #if defined(__MPI)
 
-          CALL fft_dlay_allocate( dfftp, mype, root, nproc, comm, nogrp_ , dfftp%nr1x,  dfftp%nr2x )
-          CALL fft_dlay_allocate( dffts, mype, root, nproc, comm, nogrp_ , dffts%nr1x, dffts%nr2x )
+          CALL fft_dlay_set_dims( dfftp, dfftp%nr1, dfftp%nr2, dfftp%nr3, dfftp%nr1x, dfftp%nr2x, dfftp%nr3x )
+          CALL fft_dlay_allocate( dfftp, mype, root, nproc, comm, nogrp_ )
+          CALL fft_dlay_set( dfftp, tk, nst, ub, lb, idx, ist(:,1), ist(:,2), nstp, nstpw, sstp, sstpw, st, stw )
 
-          CALL fft_dlay_set( dfftp, tk, nst, dfftp%nr1, dfftp%nr2, dfftp%nr3, dfftp%nr1x, dfftp%nr2x, dfftp%nr3x, &
-            ub, lb, idx, ist(:,1), ist(:,2), nstp, nstpw, sstp, sstpw, st, stw )
-          CALL fft_dlay_set( dffts, tk, nsts, dffts%nr1, dffts%nr2, dffts%nr3, dffts%nr1x, dffts%nr2x, dffts%nr3x, &
-            ub, lb, idx, ist(:,1), ist(:,2), nstps, nstpw, sstps, sstpw, sts, stw )
+          CALL fft_dlay_set_dims( dffts, dffts%nr1, dffts%nr2, dffts%nr3, dffts%nr1x, dffts%nr2x, dffts%nr3x )
+          CALL fft_dlay_allocate( dffts, mype, root, nproc, comm, nogrp_ )
+          CALL fft_dlay_set( dffts, tk, nsts, ub, lb, idx, ist(:,1), ist(:,2), nstps, nstpw, sstps, sstpw, sts, stw )
 
           IF( PRESENT( dfft3d ) ) THEN
              DEALLOCATE( stw )
-             ALLOCATE( stw( lb(2) : ub(2), lb(3) : ub(3) ) )
+             ALLOCATE( stw( lb(1) : ub(1), lb(2) : ub(2) ) )
              CALL sticks_maps_scalar( (.not.tk), ub, lb, bg(:,1),bg(:,2),bg(:,3), gcut, gkcut, gcuts, stw, ngm_ , ngs_ )
-             CALL fft_dlay_allocate( dfft3d, mype, root, nproc, comm, 1, max(dffts%nr1x, dffts%nr3x), dffts%nr2x )
-             CALL fft_dlay_scalar( dfft3d, ub, lb, dffts%nr1, dffts%nr2, dffts%nr3, dffts%nr1x, dffts%nr2x, dffts%nr3x, stw )
+             CALL fft_dlay_set_dims( dfft3d, dffts%nr1, dffts%nr2, dffts%nr3, dffts%nr1x, dffts%nr2x, dffts%nr3x )
+             CALL fft_dlay_allocate( dfft3d, mype, root, nproc, comm, 1 )
+             CALL fft_dlay_scalar( dfft3d, ub, lb, stw )
           END IF
 
 #else
 
           DEALLOCATE( stw )
-          ALLOCATE( stw( lb(2) : ub(2), lb(3) : ub(3) ) )
+          ALLOCATE( stw( lb(1) : ub(1), lb(2) : ub(2) ) )
 
-          CALL sticks_maps_scalar( (.not.tk), ub, lb, bg(:,1),bg(:,2),bg(:,3),&
-                                    gcut, gkcut, gcuts, stw, ngm_ , ngs_ )
+          CALL sticks_maps_scalar( (.not.tk), ub, lb, bg(:,1),bg(:,2),bg(:,3), gcut, gkcut, gcuts, stw, ngm_ , ngs_ )
 
           IF( ngm_ /= ngm ) CALL fftx_error__( ' pstickset ', ' inconsistent ngm ', abs( ngm - ngm_ ) )
           IF( ngs_ /= ngs ) CALL fftx_error__( ' pstickset ', ' inconsistent ngs ', abs( ngs - ngs_ ) )
 
-          CALL fft_dlay_allocate( dfftp, mype, root, nproc, comm, 1, max(dfftp%nr1x, dfftp%nr3x),  dfftp%nr2x  )
-          CALL fft_dlay_allocate( dffts, mype, root, nproc, comm, 1, max(dffts%nr1x, dffts%nr3x), dffts%nr2x )
+          CALL fft_dlay_set_dims( dfftp, dfftp%nr1, dfftp%nr2, dfftp%nr3, dfftp%nr1x, dfftp%nr2x, dfftp%nr3x )
+          CALL fft_dlay_allocate( dfftp, mype, root, nproc, comm, 1  )
+          CALL fft_dlay_scalar( dfftp, ub, lb, stw )
 
-          CALL fft_dlay_scalar( dfftp, ub, lb, dfftp%nr1, dfftp%nr2, dfftp%nr3, dfftp%nr1x, dfftp%nr2x, dfftp%nr3x, stw )
-          CALL fft_dlay_scalar( dffts, ub, lb, dffts%nr1, dffts%nr2, dffts%nr3, dffts%nr1x, dffts%nr2x, dffts%nr3x, stw )
+          CALL fft_dlay_set_dims( dffts, dffts%nr1, dffts%nr2, dffts%nr3, dffts%nr1x, dffts%nr2x, dffts%nr3x )
+          CALL fft_dlay_allocate( dffts, mype, root, nproc, comm, 1 )
+          CALL fft_dlay_scalar( dffts, ub, lb, stw )
 
 #endif
 
@@ -232,14 +245,19 @@
           nstpx  = maxval( nstp )
 ! ...     Maximum number of sticks (wave func.)
           nstpwx = maxval( nstpw  )
-
           !
           !  Initialize task groups.
           !  Note that this call modify dffts adding task group data.
           !
-          CALL task_groups_init( dffts )
+          IF( PRESENT( dtgs ) ) THEN
+             CALL task_groups_init( dffts, dtgs, nogrp_ )
+          ELSE
+             IF( nogrp_ > 1 ) THEN
+                CALL fftx_error__( ' pstickset ', &
+                & ' more than one Task Groups is requested, but the Task Group descriptor is not initialized ', 1 )
+             END IF
+          END IF
           !
-
           IF (ionode) THEN
              WRITE( stdout,*)
              IF ( nproc > 1 ) THEN
@@ -436,24 +454,22 @@
 
 #if defined(__MPI)
 
-          CALL fft_dlay_allocate( dffts, mype, root, nproc, comm, nogrp_ , dffts%nr1x, dffts%nr2x )
-
-          CALL fft_dlay_set( dffts, tk, nsts, dffts%nr1, dffts%nr2, dffts%nr3, dffts%nr1x, dffts%nr2x, dffts%nr3x, &
-            ub, lb, idx, ist(:,1), ist(:,2), nstps, nstpw, sstps, sstpw, sts, stw )
+          CALL fft_dlay_set_dims( dffts, dffts%nr1, dffts%nr2, dffts%nr3, dffts%nr1x, dffts%nr2x, dffts%nr3x )
+          CALL fft_dlay_allocate( dffts, mype, root, nproc, comm, nogrp_ )
+          CALL fft_dlay_set( dffts, tk, nsts, ub, lb, idx, ist(:,1), ist(:,2), nstps, nstpw, sstps, sstpw, sts, stw )
 
 #else
 
           DEALLOCATE( stw )
-          ALLOCATE( stw( lb(2) : ub(2), lb(3) : ub(3) ) )
+          ALLOCATE( stw( lb(1) : ub(1), lb(2) : ub(2) ) )
 
-          CALL sticks_maps_scalar( (.not.tk), ub, lb, bg(:,1),bg(:,2),bg(:,3),&
-                                    gcut, gkcut, gcuts, stw, ngm_ , ngs_ )
+          CALL sticks_maps_scalar( (.not.tk), ub, lb, bg(:,1),bg(:,2),bg(:,3), gcut, gkcut, gcuts, stw, ngm_ , ngs_ )
 
           IF( ngs_ /= ngs ) CALL fftx_error__( ' pstickset_custom ', ' inconsistent ngs ', abs( ngs - ngs_ ) )
 
-          CALL fft_dlay_allocate( dffts, mype, root, nproc, comm, 1, max(dffts%nr1x, dffts%nr3x), dffts%nr2x )
-
-          CALL fft_dlay_scalar( dffts, ub, lb, dffts%nr1, dffts%nr2, dffts%nr3, dffts%nr1x, dffts%nr2x, dffts%nr3x, stw )
+          CALL fft_dlay_set_dims( dffts, dffts%nr1, dffts%nr2, dffts%nr3, dffts%nr1x, dffts%nr2x, dffts%nr3x )
+          CALL fft_dlay_allocate( dffts, mype, root, nproc, comm, 1 )
+          CALL fft_dlay_scalar( dffts, ub, lb, stw )
 
 #endif
 
@@ -476,228 +492,6 @@
           RETURN
         END SUBROUTINE pstickset_custom
 
-!-----------------------------------------
-! Task groups Contributed by C. Bekas, October 2005
-! Revised by C. Cavazzoni
-!--------------------------------------------
-
-SUBROUTINE task_groups_init( dffts )
-
-   !
-   USE fft_types,      ONLY : fft_dlay_descriptor
-
-   ! T.G.
-   ! NPGRP:      Number of processors per group
-   ! NOGRP:      Number of processors per orbital task group
-
-   IMPLICIT NONE
-#if defined(__MPI)
-   INCLUDE 'mpif.h'
-#endif
-
-
-   TYPE(fft_dlay_descriptor), INTENT(inout) :: dffts
-
-   INTEGER :: stdout = 6
-
-   !----------------------------------
-   !Local Variables declaration
-   !----------------------------------
-
-   INTEGER  :: I
-   INTEGER  :: IERR
-   INTEGER  :: num_planes, num_sticks
-   INTEGER  :: nnrsx_vec ( dffts%nproc )
-   INTEGER  :: pgroup( dffts%nproc )
-   INTEGER  :: strd
-
-   CALL task_groups_init_first( dffts )
-   !
-#if defined(DEBUG)
-   IF ( dffts%nogrp > 1 ) WRITE( stdout, 100 ) dffts%nogrp, dffts%npgrp
-
-100 FORMAT( /,3X,'Task Groups are in USE',/,3X,'groups and procs/group : ',I5,I5 )
-#endif
-
-   !Find maximum chunk of local data concerning coefficients of eigenfunctions in g-space
-
-#if defined(__MPI)
-   CALL MPI_Allgather( dffts%nnr, 1, MPI_INTEGER, nnrsx_vec, 1, MPI_INTEGER, dffts%comm, IERR)
-   strd = maxval( nnrsx_vec( 1:dffts%nproc ) )
-#else
-   strd = dffts%nnr
-#endif
-
-   IF( strd /= dffts%tg_nnr ) CALL fftx_error__( ' task_groups_init ', ' inconsistent nnr ', 1 )
-
-   !-------------------------------------------------------------------------------------
-   !C. Bekas...TASK GROUP RELATED. FFT DATA STRUCTURES ARE ALREADY DEFINED ABOVE
-   !-------------------------------------------------------------------------------------
-   !dfft%nsw(me) holds the number of z-sticks for the current processor per wave-function
-   !We can either send these in the group with an mpi_allgather...or put them
-   !in the PSIS vector (in special positions) and send them with them.
-   !Otherwise we can do this once at the beginning, before the loop.
-   !we choose to do the latter one.
-   !-------------------------------------------------------------------------------------
-   !
-   !
-   ALLOCATE( dffts%tg_nsw(dffts%nproc))
-   ALLOCATE( dffts%tg_npp(dffts%nproc))
-
-   num_sticks = 0
-   num_planes = 0
-   DO i = 1, dffts%nogrp
-      num_sticks = num_sticks + dffts%nsw( dffts%nolist(i) + 1 )
-      num_planes = num_planes + dffts%npp( dffts%nolist(i) + 1 )
-   ENDDO
-
-#if defined(__MPI)
-   CALL MPI_ALLGATHER(num_sticks, 1, MPI_INTEGER, dffts%tg_nsw(1), 1, MPI_INTEGER, dffts%comm, IERR)
-   CALL MPI_ALLGATHER(num_planes, 1, MPI_INTEGER, dffts%tg_npp(1), 1, MPI_INTEGER, dffts%comm, IERR)
-#else
-   dffts%tg_nsw(1) = num_sticks
-   dffts%tg_npp(1) = num_planes
-#endif
-
-   ALLOCATE( dffts%tg_snd( dffts%nogrp ) )
-   ALLOCATE( dffts%tg_rcv( dffts%nogrp ) )
-   ALLOCATE( dffts%tg_psdsp( dffts%nogrp ) )
-   ALLOCATE( dffts%tg_usdsp( dffts%nogrp ) )
-   ALLOCATE( dffts%tg_rdsp( dffts%nogrp ) )
-
-   dffts%tg_snd(1)   = dffts%nr3x * dffts%nsw( dffts%mype + 1 )
-   IF( dffts%nr3x * dffts%nsw( dffts%mype + 1 ) > dffts%tg_nnr ) THEN
-      CALL fftx_error__( ' task_groups_init ', ' inconsistent dffts%tg_nnr ', 1 )
-   ENDIF
-   dffts%tg_psdsp(1) = 0
-   dffts%tg_usdsp(1) = 0
-   dffts%tg_rcv(1)  = dffts%nr3x * dffts%nsw( dffts%nolist(1) + 1 )
-   dffts%tg_rdsp(1) = 0
-   DO i = 2, dffts%nogrp
-      dffts%tg_snd(i)  = dffts%nr3x * dffts%nsw( dffts%mype + 1 )
-      dffts%tg_psdsp(i) = dffts%tg_psdsp(i-1) + dffts%tg_nnr
-      dffts%tg_usdsp(i) = dffts%tg_usdsp(i-1) + dffts%tg_snd(i-1)
-      dffts%tg_rcv(i)  = dffts%nr3x * dffts%nsw( dffts%nolist(i) + 1 )
-      dffts%tg_rdsp(i) = dffts%tg_rdsp(i-1) + dffts%tg_rcv(i-1)
-   ENDDO
-
-   RETURN
-
-END SUBROUTINE task_groups_init
-
-
-  !
-SUBROUTINE task_groups_init_first( dffts )
-   !
-   USE fft_types,      ONLY : fft_dlay_descriptor
-   !
-   IMPLICIT NONE
-#if defined(__MPI)
-   INCLUDE 'mpif.h'
-#endif
-   !
-   TYPE(fft_dlay_descriptor), INTENT(inout) :: dffts
-    !
-    INTEGER :: i, n1, ipos, color, key, ierr, itsk, ntsk
-    INTEGER :: pgroup( dffts%nproc )
-    !
-    !SUBDIVIDE THE PROCESSORS IN GROUPS
-    !
-    DO i = 1, dffts%nproc
-       pgroup( i ) = i - 1
-    ENDDO
-    !
-#if defined(__TASK_GROUP_WAVE_ORDER)
-    n1 = ( dffts%mype / dffts%npgrp ) * dffts%npgrp 
-    ipos = dffts%mype - n1
-#else
-    n1 = ( dffts%mype / dffts%nogrp ) * dffts%nogrp 
-    ipos = dffts%mype - n1
-#endif
-    !
-    !LIST OF PROCESSORS IN MY ORBITAL GROUP 
-    !     (processors dealing with my same pw's of different orbitals)
-    !
-    !  processors in these group have contiguous indexes
-    !
-    DO i = 1, dffts%nogrp
-#if defined(__TASK_GROUP_WAVE_ORDER)
-       dffts%nolist( i ) = pgroup( ipos + ( i - 1 ) * dffts%npgrp + 1 )
-#else
-       dffts%nolist( i ) = pgroup( n1 + i )
-#endif
-    ENDDO
-    !
-    !LIST OF PROCESSORS IN MY PLANE WAVE GROUP
-    !     (processors dealing with different pw's of my same orbital)
-    !
-    DO i = 1, dffts%npgrp
-#if defined(__TASK_GROUP_WAVE_ORDER)
-       dffts%nplist( i ) = pgroup( n1 + i )
-#else
-       dffts%nplist( i ) = pgroup( ipos + ( i - 1 ) * dffts%nogrp + 1 )
-#endif
-    ENDDO
-    !
-    !SET UP THE GROUPS
-    !
-    !CREATE ORBITAL GROUPS
-    !
-#if defined(__MPI)
-    ! processes with the same color are in the same new communicator
-
-#if defined(__TASK_GROUP_WAVE_ORDER)
-    color = MOD( dffts%mype , dffts%npgrp )
-    key   = dffts%mype / dffts%npgrp
-#else
-    color = dffts%mype / dffts%nogrp
-    key   = MOD( dffts%mype , dffts%nogrp )
-#endif
-
-
-    CALL MPI_COMM_SPLIT( dffts%comm, color, key, dffts%ogrp_comm, ierr )
-    if( ierr /= 0 ) &
-         CALL fftx_error__( ' task_groups_init_first ', ' creating ogrp_comm ', ABS(ierr) )
-    CALL MPI_COMM_RANK( dffts%ogrp_comm, itsk, IERR )
-    CALL MPI_COMM_SIZE( dffts%ogrp_comm, ntsk, IERR )
-    IF( dffts%nogrp /= ntsk ) CALL fftx_error__( ' task_groups_init_first ', ' ogrp_comm size ', ntsk )
-    DO i = 1, dffts%nogrp
-       IF( dffts%mype == dffts%nolist( i ) ) THEN
-          IF( (i-1) /= itsk ) CALL fftx_error__( ' task_groups_init_first ', ' ogrp_comm rank ', itsk )
-       END IF
-    END DO
-#endif
-    !
-    !CREATE PLANEWAVE GROUPS
-    !
-#if defined(__MPI)
-    ! processes with the same color are in the same new communicator
-
-#if defined(__TASK_GROUP_WAVE_ORDER)
-    color = dffts%mype / dffts%npgrp
-    key   = MOD( dffts%mype , dffts%npgrp )
-#else
-    color = MOD( dffts%mype , dffts%nogrp )
-    key   = dffts%mype / dffts%nogrp
-#endif
-
-    CALL MPI_COMM_SPLIT( dffts%comm, color, key, dffts%pgrp_comm, ierr )
-    if( ierr /= 0 ) &
-         CALL fftx_error__( ' task_groups_init_first ', ' creating pgrp_comm ', ABS(ierr) )
-    CALL MPI_COMM_RANK( dffts%pgrp_comm, itsk, IERR )
-    CALL MPI_COMM_SIZE( dffts%pgrp_comm, ntsk, IERR )
-    IF( dffts%npgrp /= ntsk ) CALL fftx_error__( ' task_groups_init_first ', ' pgrp_comm size ', ntsk )
-    DO i = 1, dffts%npgrp
-       IF( dffts%mype == dffts%nplist( i ) ) THEN
-          IF( (i-1) /= itsk ) CALL fftx_error__( ' task_groups_init_first ', ' pgrp_comm rank ', itsk )
-       END IF
-    END DO
-    dffts%me_pgrp = itsk
-#endif
-
-    RETURN
-  END SUBROUTINE task_groups_init_first
-  !
 
 !=----------------------------------------------------------------------=
    END MODULE stick_set

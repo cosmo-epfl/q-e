@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2014 Quantum ESPRESSO group
+! Copyright (C) 2001-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -24,19 +24,19 @@ SUBROUTINE solve_linter (irr, imode0, npe, drhoscf)
   USE kinds,                ONLY : DP
   USE ions_base,            ONLY : nat, ntyp => nsp, ityp
   USE io_global,            ONLY : stdout, ionode
-  USE io_files,             ONLY : prefix, iunigk, diropn
+  USE io_files,             ONLY : prefix, diropn
   USE check_stop,           ONLY : check_stop_now
   USE wavefunctions_module, ONLY : evc
   USE constants,            ONLY : degspin
   USE cell_base,            ONLY : at, tpiba2
-  USE klist,                ONLY : lgauss, degauss, ngauss, xk, wk
+  USE klist,                ONLY : lgauss, degauss, ngauss, xk, wk, ngk, igk_k
   USE gvect,                ONLY : g
   USE gvecs,                ONLY : doublegrid
-  USE fft_base,             ONLY : dfftp, dffts
+  USE fft_base,             ONLY : dfftp, dffts, dtgs
   USE fft_parallel,         ONLY : tg_cgather
   USE lsda_mod,             ONLY : lsda, nspin, current_spin, isk
   USE spin_orb,             ONLY : domag
-  USE wvfct,                ONLY : nbnd, npw, npwx, igk,g2kin,  et
+  USE wvfct,                ONLY : nbnd, npwx, g2kin,  et
   USE scf,                  ONLY : rho
   USE uspp,                 ONLY : okvan, vkb
   USE uspp_param,           ONLY : upf, nhm, nh
@@ -46,19 +46,16 @@ SUBROUTINE solve_linter (irr, imode0, npe, drhoscf)
   USE paw_symmetry,         ONLY : paw_dusymmetrize, paw_dumqsymmetrize
   USE buffers,              ONLY : save_buffer, get_buffer
   USE control_ph,           ONLY : rec_code, niter_ph, nmix_ph, tr2_ph, &
-                                   alpha_pv, lgamma, lgamma_gamma, convt, &
-                                   nbnd_occ, alpha_mix, rec_code_read, &
+                                   lgamma_gamma, convt, &
+                                   alpha_mix, rec_code_read, &
                                    where_rec, flmixdpot, ext_recover
   USE el_phon,              ONLY : elph
-  USE nlcc_ph,              ONLY : nlcc_any
+  USE uspp,                 ONLY : nlcc_any
   USE units_ph,             ONLY : iudrho, lrdrho, iudwf, lrdwf, iubar, lrbar, &
                                    iuwfc, lrwfc, iudvscf, iuint3paw, lint3paw
   USE output,               ONLY : fildrho, fildvscf
-  USE phus,                 ONLY : int3_paw, becsumort
-  USE eqv,                  ONLY : dvpsi, dpsi, evq, eprec
-  USE qpoint,               ONLY : xq, npwq, igkq, nksq, ikks, ikqs
-  USE modes,                ONLY : npertx, npert, u, t, irotmq, tmq, &
-                                   minus_q, nsymq, rtau
+  USE phus,                 ONLY : becsumort
+  USE modes,                ONLY : npertx, npert, u, t, tmq
 
   USE recover_mod,          ONLY : read_rec, write_rec
   ! used to write fildrho:
@@ -69,6 +66,14 @@ SUBROUTINE solve_linter (irr, imode0, npe, drhoscf)
   USE mp_bands,             ONLY : intra_bgrp_comm, ntask_groups, me_bgrp
   USE mp,                   ONLY : mp_sum
   USE efermi_shift,         ONLY : ef_shift, ef_shift_paw,  def
+
+  USE lrus,         ONLY : int3_paw
+  USE lr_symm_base, ONLY : irotmq, minus_q, nsymq, rtau
+  USE eqv,          ONLY : dvpsi, dpsi, evq
+  USE qpoint,       ONLY : xq, nksq, ikks, ikqs
+  USE control_lr,   ONLY : alpha_pv, nbnd_occ, lgamma
+  USE dv_of_drho_lr
+
   implicit none
 
   integer :: irr, npe, imode0
@@ -99,11 +104,12 @@ SUBROUTINE solve_linter (irr, imode0, npe, drhoscf)
   ! change of scf potential (output)
   complex(DP), allocatable :: ldos (:,:), ldoss (:,:), mixin(:), mixout(:), &
        dbecsum (:,:,:,:), dbecsum_nc(:,:,:,:,:), aux1 (:,:), tg_dv(:,:), &
-       tg_psic(:,:), aux2(:,:)
+       tg_psic(:,:), aux2(:,:), drhoc(:)
   ! Misc work space
   ! ldos : local density of states af Ef
   ! ldoss: as above, without augmentation charges
   ! dbecsum: the derivative of becsum
+  ! drhoc: response core charge density
   REAL(DP), allocatable :: becsum1(:,:,:)
 
   logical :: conv_root,  & ! true if linear system is converged
@@ -130,6 +136,7 @@ SUBROUTINE solve_linter (irr, imode0, npe, drhoscf)
              ipol,       & ! counter on polarization
              mode          ! mode index
 
+  integer  :: npw, npwq
   integer  :: iq_dummy
   real(DP) :: tcpu, get_clock ! timing variables
   character(len=256) :: filename
@@ -142,8 +149,6 @@ SUBROUTINE solve_linter (irr, imode0, npe, drhoscf)
 !
 !  This routine is task group aware
 !
-  IF ( ntask_groups > 1 ) dffts%have_task_groups=.TRUE.
-
   allocate (dvscfin ( dfftp%nnr , nspin_mag , npe))
   if (doublegrid) then
      allocate (dvscfins (dffts%nnr , nspin_mag , npe))
@@ -162,13 +167,14 @@ SUBROUTINE solve_linter (irr, imode0, npe, drhoscf)
   allocate (aux1 ( dffts%nnr, npol))
   allocate (h_diag ( npwx*npol, nbnd))
   allocate (aux2(npwx*npol, nbnd))
+  allocate (drhoc(dfftp%nnr))
   incr=1
-  IF ( dffts%have_task_groups ) THEN
+  IF ( dtgs%have_task_groups ) THEN
      !
-     v_siz =  dffts%tg_nnr * dffts%nogrp
+     v_siz =  dtgs%tg_nnr * dtgs%nogrp
      ALLOCATE( tg_dv   ( v_siz, nspin_mag ) )
      ALLOCATE( tg_psic( v_siz, npol ) )
-     incr = dffts%nogrp
+     incr = dtgs%nogrp
      !
   ENDIF
   !
@@ -232,24 +238,16 @@ SUBROUTINE solve_linter (irr, imode0, npe, drhoscf)
      dbecsum(:,:,:,:) = (0.d0, 0.d0)
      IF (noncolin) dbecsum_nc = (0.d0, 0.d0)
      !
-     if (nksq.gt.1) rewind (unit = iunigk)
      do ik = 1, nksq
-        if (nksq.gt.1) then
-           read (iunigk, err = 100, iostat = ios) npw, igk
-100        call errore ('solve_linter', 'reading igk', abs (ios) )
-        endif
-        if (lgamma)  npwq = npw
+        !
         ikk = ikks(ik)
         ikq = ikqs(ik)
-        if (lsda) current_spin = isk (ikk)
-        if (.not.lgamma.and.nksq.gt.1) then
-           read (iunigk, err = 200, iostat = ios) npwq, igkq
-200        call errore ('solve_linter', 'reading igkq', abs (ios) )
-
-        endif
-        call init_us_2 (npwq, igkq, xk (1, ikq), vkb)
+        npw = ngk(ikk)
+        npwq= ngk(ikq)
         !
-        ! reads unperturbed wavefuctions psi(k) and psi(k+q)
+        if (lsda) current_spin = isk (ikk)
+        !
+        ! read unperturbed wavefunctions psi(k) and psi(k+q)
         !
         if (nksq.gt.1) then
            if (lgamma) then
@@ -261,27 +259,15 @@ SUBROUTINE solve_linter (irr, imode0, npe, drhoscf)
 
         endif
         !
-        ! compute the kinetic energy
+        ! compute beta functions and kinetic energy for k-point ikq
+        ! needed by h_psi, called by ch_psi_all, called by cgsolve_all
         !
-        do ig = 1, npwq
-           g2kin (ig) = ( (xk (1,ikq) + g (1, igkq(ig)) ) **2 + &
-                          (xk (2,ikq) + g (2, igkq(ig)) ) **2 + &
-                          (xk (3,ikq) + g (3, igkq(ig)) ) **2 ) * tpiba2
-        enddo
-
-        h_diag=0.d0
-        do ibnd = 1, nbnd_occ (ikk)
-           do ig = 1, npwq
-              h_diag(ig,ibnd)=1.d0/max(1.0d0,g2kin(ig)/eprec(ibnd,ik))
-           enddo
-           IF (noncolin) THEN
-              do ig = 1, npwq
-                 h_diag(ig+npwx,ibnd)=1.d0/max(1.0d0,g2kin(ig)/eprec(ibnd,ik))
-              enddo
-           END IF
-        enddo
+        CALL init_us_2 (npwq, igk_k(1,ikq), xk (1, ikq), vkb)
+        CALL g2_kin (ikq) 
         !
-        ! diagonal elements of the unperturbed hamiltonian
+        ! compute preconditioning matrix h_diag used by cgsolve_all
+        !
+        CALL h_prec (ik, evq, h_diag)
         !
         do ipert = 1, npe
            mode = imode0 + ipert
@@ -299,38 +285,36 @@ SUBROUTINE solve_linter (irr, imode0, npe, drhoscf)
               ! dvscf_q from previous iteration (mix_potential)
               !
               call start_clock ('vpsifft')
-              IF ( ntask_groups > 1 ) dffts%have_task_groups=.TRUE.
-              IF( dffts%have_task_groups ) THEN
+              IF( dtgs%have_task_groups ) THEN
                  IF (noncolin) THEN
-                    CALL tg_cgather( dffts, dvscfins(:,1,ipert), &
+                    CALL tg_cgather( dffts, dtgs, dvscfins(:,1,ipert), &
                                                                 tg_dv(:,1))
                     IF (domag) THEN
                        DO ipol=2,4
-                          CALL tg_cgather( dffts, dvscfins(:,ipol,ipert), &
+                          CALL tg_cgather( dffts, dtgs, dvscfins(:,ipol,ipert), &
                                                              tg_dv(:,ipol))
                        ENDDO
                     ENDIF
                  ELSE
-                    CALL tg_cgather( dffts, dvscfins(:,current_spin,ipert), &
+                    CALL tg_cgather( dffts, dtgs, dvscfins(:,current_spin,ipert), &
                                                              tg_dv(:,1))
                  ENDIF
               ENDIF
               aux2=(0.0_DP,0.0_DP)
               do ibnd = 1, nbnd_occ (ikk), incr
-                 IF( dffts%have_task_groups ) THEN
-                    call cft_wave_tg (evc, tg_psic, 1, v_siz, ibnd, &
+                 IF( dtgs%have_task_groups ) THEN
+                    call cft_wave_tg (ik, evc, tg_psic, 1, v_siz, ibnd, &
                                       nbnd_occ (ikk) )
                     call apply_dpot(v_siz, tg_psic, tg_dv, 1)
-                    call cft_wave_tg (aux2, tg_psic, -1, v_siz, ibnd, &
+                    call cft_wave_tg (ik, aux2, tg_psic, -1, v_siz, ibnd, &
                                       nbnd_occ (ikk))
                  ELSE
-                    call cft_wave (evc (1, ibnd), aux1, +1)
+                    call cft_wave (ik, evc (1, ibnd), aux1, +1)
                     call apply_dpot(dffts%nnr,aux1, dvscfins(1,1,ipert), current_spin)
-                    call cft_wave (aux2 (1, ibnd), aux1, -1)
+                    call cft_wave (ik, aux2 (1, ibnd), aux1, -1)
                  ENDIF
               enddo
               dvpsi=dvpsi+aux2
-              dffts%have_task_groups=.FALSE.
               call stop_clock ('vpsifft')
               !
               !  In the case of US pseudopotentials there is an additional
@@ -350,7 +334,7 @@ SUBROUTINE solve_linter (irr, imode0, npe, drhoscf)
            ! Ortogonalize dvpsi to valence states: ps = <evq|dvpsi>
            ! Apply -P_c^+.
            !
-           CALL orthogonalize(dvpsi, evq, ikk, ikq, dpsi, npwq)
+           CALL orthogonalize(dvpsi, evq, ikk, ikq, dpsi, npwq, .false.)
            !
            if (where_rec=='solve_lint'.or.iter > 1) then
               !
@@ -482,9 +466,21 @@ SUBROUTINE solve_linter (irr, imode0, npe, drhoscf)
            call davcio_drho (drhoscfh(1,1,ipert), lrdrho, iudrho, imode0+ipert, +1)
 !           close(iudrho)
         endif
-        
+        ! 
         call zcopy (dfftp%nnr*nspin_mag,drhoscfh(1,1,ipert),1,dvscfout(1,1,ipert),1)
-        call dv_of_drho (imode0+ipert, dvscfout(1,1,ipert), .true.)
+        !
+        ! Compute the response of the core charge density
+        ! IT: Should the condition "imode0+ipert > 0" be removed?
+        !
+        if (imode0+ipert > 0) then
+           call addcore (imode0+ipert, drhoc)
+        else
+           drhoc(:) = (0.0_DP,0.0_DP) 
+        endif
+        !
+        ! Compute the response HXC potential
+        call dv_of_drho (dvscfout(1,1,ipert), .true., drhoc)
+        !
      enddo
      !
      !   And we mix with the old potential
@@ -580,7 +576,7 @@ SUBROUTINE solve_linter (irr, imode0, npe, drhoscf)
            endif
            call davcio_drho ( dvscfin(1,1,ipert),  lrdrho, iudvscf, &
                          imode0 + ipert, +1 )
-           IF (okpaw.AND.me_bgrp==0) CALL davcio( int3_paw(:,:,ipert,:,:), lint3paw, &
+           IF (okpaw.AND.me_bgrp==0) CALL davcio( int3_paw(:,:,:,:,ipert), lint3paw, &
                                                   iuint3paw, imode0+ipert, + 1 )
         end do
         if (elph) call elphel (irr, npe, imode0, dvscfins)
@@ -603,12 +599,11 @@ SUBROUTINE solve_linter (irr, imode0, npe, drhoscf)
   if (doublegrid) deallocate (dvscfins)
   deallocate (dvscfin)
   deallocate(aux2)
-  IF ( ntask_groups > 1) dffts%have_task_groups=.TRUE.
-  IF ( dffts%have_task_groups ) THEN
+  deallocate(drhoc)
+  IF ( dtgs%have_task_groups ) THEN
      DEALLOCATE( tg_dv )
      DEALLOCATE( tg_psic )
   ENDIF
-  dffts%have_task_groups=.FALSE.
 
   call stop_clock ('solve_linter')
 END SUBROUTINE solve_linter

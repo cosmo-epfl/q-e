@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2007 Quantum ESPRESSO group
+! Copyright (C) 2001-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -22,26 +22,26 @@ subroutine dvqpsi_us (ik, uact, addnlcc)
   USE kinds, only : DP
   USE ions_base, ONLY : nat, ityp
   USE cell_base, ONLY : tpiba
-  USE fft_base,   ONLY: dfftp, dffts
+  USE fft_base,  ONLY : dfftp, dffts
   USE fft_interfaces, ONLY: fwfft, invfft
   USE gvect,     ONLY : eigts1, eigts2, eigts3, mill, g, nl, &
                         ngm
-  USE gvecs,   ONLY : ngms, doublegrid, nls
+  USE gvecs,     ONLY : ngms, doublegrid, nls
   USE lsda_mod,  ONLY : lsda, isk
   USE noncollin_module, ONLY : npol
   use uspp_param,ONLY : upf
-  USE wvfct,     ONLY : nbnd, npw, npwx, igk
+  USE wvfct,     ONLY : nbnd, npwx
   USE wavefunctions_module,  ONLY: evc
-  USE nlcc_ph,    ONLY : nlcc_any, drc
+  USE nlcc_ph,    ONLY : drc
+  USE uspp,       ONLY : nlcc_any
   USE eqv,        ONLY : dvpsi, dmuxc, vlocq
-  USE qpoint,     ONLY : npwq, igkq, xq, eigqts, ikks
-
+  USE qpoint,     ONLY : xq, eigqts, ikqs, ikks
+  USE klist,      ONLY : ngk, igk_k
   implicit none
   !
   !   The dummy variables
   !
-
-  integer :: ik
+  integer, intent(in) :: ik
   ! input: the k point
   complex(DP) :: uact (3 * nat)
   ! input: the pattern of displacements
@@ -50,7 +50,7 @@ subroutine dvqpsi_us (ik, uact, addnlcc)
   !   And the local variables
   !
 
-  integer :: na, mu, ikk, ig, nt, ibnd, ir, is, ip
+  integer :: npw, npwq, na, mu, ikq, ikk, iks, ig, nt, ibnd, ir, is, ip
   ! counter on atoms
   ! counter on modes
   ! the point k
@@ -63,12 +63,8 @@ subroutine dvqpsi_us (ik, uact, addnlcc)
   complex(DP) , allocatable, target :: aux (:)
   complex(DP) , allocatable :: aux1 (:), aux2 (:)
   complex(DP) , pointer :: auxs (:)
-  ! work space
-  logical :: htg
 
   call start_clock ('dvqpsi_us')
-  htg = dffts%have_task_groups
-  dffts%have_task_groups=.FALSE.
   if (nlcc_any.and.addnlcc) then
      allocate (aux( dfftp%nnr))
      if (doublegrid) then
@@ -85,7 +81,6 @@ subroutine dvqpsi_us (ik, uact, addnlcc)
   !    reciprocal space while the product with the wavefunction is done in
   !    real space
   !
-  ikk = ikks(ik)
   dvpsi(:,:) = (0.d0, 0.d0)
   aux1(:) = (0.d0, 0.d0)
   do na = 1, nat
@@ -157,17 +152,21 @@ subroutine dvqpsi_us (ik, uact, addnlcc)
   !
   ! Now we compute dV_loc/dtau in real space
   !
+  ikk = ikks(ik)
+  ikq = ikqs(ik)
+  npw = ngk(ikk)
+  npwq= ngk(ikq)
   CALL invfft ('Smooth', aux1, dffts)
   do ibnd = 1, nbnd
      do ip=1,npol
         aux2(:) = (0.d0, 0.d0)
         if (ip==1) then
            do ig = 1, npw
-              aux2 (nls (igk (ig) ) ) = evc (ig, ibnd)
+              aux2 (nls (igk_k (ig,ikk) ) ) = evc (ig, ibnd)
            enddo
         else
            do ig = 1, npw
-              aux2 (nls (igk (ig) ) ) = evc (ig+npwx, ibnd)
+              aux2 (nls (igk_k (ig,ikk) ) ) = evc (ig+npwx, ibnd)
            enddo
         end if
         !
@@ -183,11 +182,11 @@ subroutine dvqpsi_us (ik, uact, addnlcc)
         CALL fwfft ('Wave', aux2, dffts)
         if (ip==1) then
            do ig = 1, npwq
-              dvpsi (ig, ibnd) = aux2 (nls (igkq (ig) ) )
+              dvpsi (ig, ibnd) = aux2 (nls (igk_k (ig,ikq) ) )
            enddo
         else
            do ig = 1, npwq
-              dvpsi (ig+npwx, ibnd) = aux2 (nls (igkq (ig) ) )
+              dvpsi (ig+npwx, ibnd) = aux2 (nls (igk_k (ig,ikq) ) )
            enddo
         end if
      enddo
@@ -206,7 +205,6 @@ subroutine dvqpsi_us (ik, uact, addnlcc)
   !
   call dvqpsi_us_only (ik, uact)
 
-  dffts%have_task_groups=htg
   call stop_clock ('dvqpsi_us')
   return
 end subroutine dvqpsi_us

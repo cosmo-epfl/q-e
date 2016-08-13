@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2015 Quantum ESPRESSO group
+! Copyright (C) 2001-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -52,10 +52,6 @@ PROGRAM lr_main
   USE plugin_flags,          ONLY : use_environ
   USE environ_info,          ONLY : environ_summary
 #endif
-
-  !Debugging
-  USE lr_variables,          ONLY : check_all_bands_gamma, check_density_gamma, &
-                                  & check_vector_gamma
   !
   IMPLICIT NONE
   !
@@ -63,7 +59,7 @@ PROGRAM lr_main
   !
   INTEGER            :: ip,na,pol_index,ibnd
   INTEGER            :: iter_restart,iteration
-  LOGICAL            :: rflag, tg_tmp
+  LOGICAL            :: rflag
   COMPLEX(kind=dp)   :: temp
   LOGICAL, EXTERNAL  :: test_restart
   !
@@ -81,8 +77,8 @@ PROGRAM lr_main
      WRITE(stdout,'("<lr_main>")')
   ENDIF
   !
-  ! Let the PHonon and Environ routines know that 
-  ! they are doing tddfpt.
+  ! Let the routines of the Environ plugin know that 
+  ! they are doing TDDFPT.
   !
   tddfpt = .TRUE.
   !
@@ -125,8 +121,6 @@ PROGRAM lr_main
   !
   CALL set_bgrp_indices(nbnd,ibnd_start,ibnd_end)
   !
-  tg_tmp = dffts%have_task_groups
-  !
   ! Set up initial response orbitals (starting Lanczos vectors)
   !
   IF ( test_restart(1) ) THEN
@@ -138,8 +132,6 @@ PROGRAM lr_main
   !do ip = 1, n_ipol
   !  temp = wfc_dot(ibnd)
   !enddo
-  !
-  dffts%have_task_groups = tg_tmp
   !
   DEALLOCATE( psic )
   !
@@ -236,7 +228,7 @@ PROGRAM lr_main
         !
         LR_iteration = iteration
         !
-        WRITE(stdout,'(/5x,"Lanczos iteration:",1x,i6,3x"Pol:",i1,i8)') LR_iteration, ip
+        WRITE(stdout,'(/5x,"Lanczos iteration:",1x,i6,3x,"Pol:",i1,i8)') LR_iteration, ip
         !
         CALL one_lanczos_step()
         !
@@ -311,7 +303,7 @@ CONTAINS
  
 SUBROUTINE lr_print_preamble()
     
-    USE lr_variables,        ONLY : no_hxc
+    USE lr_variables,        ONLY : no_hxc, d0psi_rs
     USE uspp,                ONLY : okvan
     USE funct,               ONLY : dft_is_hybrid
     USE martyna_tuckerman,   ONLY : do_comp_mt
@@ -342,7 +334,7 @@ SUBROUTINE lr_print_preamble()
     !
     IF (no_hxc)  THEN
        WRITE(stdout,'(5x,"No Hartree/Exchange/Correlation")')
-    ELSEIF (dft_is_hybrid()) THEN
+    ELSEIF (dft_is_hybrid() .AND. .NOT.d0psi_rs) THEN
        WRITE(stdout, '(/5x,"Use of exact-exchange enabled. Note the EXX correction to the [H,X]", &
                      & /5x,"commutator is NOT included hence the f-sum rule will be violated.",   &
                      & /5x,"You can try to use the variable d0psi_rs=.true. (see the documentation).")' )

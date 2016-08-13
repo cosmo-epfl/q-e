@@ -10,9 +10,9 @@ subroutine drhodv (nu_i0, nper, drhoscf)
   !-----------------------------------------------------------------------
   !
   !    This subroutine computes the electronic term
-  !    <psi|dv - e ds|dpsi> of the dynamical matrix.
+  !    2 <dpsi|dv - e ds|psi> of the dynamical matrix.
   !    Eq. B35 of PRB 64, 235118 (2001). The contribution of
-  !    the nonlocal potential is calculated in rhodvnl, the
+  !    the nonlocal potential is calculated in drhodvnl, the
   !    contribution of the local potential in drhodvloc.
   !    Note that drhoscf contain only the smooth part of the
   !    induced charge density, calculated in solve linter.
@@ -20,11 +20,11 @@ subroutine drhodv (nu_i0, nper, drhoscf)
   !
   USE kinds,     ONLY : DP
   USE ions_base, ONLY : nat
-  USE klist,     ONLY : xk
+  USE klist,     ONLY : xk, ngk, igk_k
   USE gvect,     ONLY : g
   USE cell_base, ONLY : tpiba
   USE lsda_mod,  ONLY : current_spin, lsda, isk, nspin
-  USE wvfct,     ONLY : npw, npwx, nbnd, igk
+  USE wvfct,     ONLY : npwx, nbnd
   USE uspp,      ONLY : nkb, vkb
   USE becmod,    ONLY : calbec, bec_type, becscal, allocate_bec_type, &
                         deallocate_bec_type
@@ -32,14 +32,14 @@ subroutine drhodv (nu_i0, nper, drhoscf)
   USE io_global, ONLY : stdout
   USE buffers,   ONLY : get_buffer
   USE noncollin_module, ONLY : noncolin, npol, nspin_mag
-  USE io_files, ONLY: iunigk
 
   USE dynmat,   ONLY : dyn, dyn_rec
   USE modes,    ONLY : u
-  USE qpoint,   ONLY : nksq, npwq, igkq, ikks, ikqs
-  USE eqv,      ONLY : dpsi
   USE units_ph, ONLY : lrdwf, iudwf
-  USE control_ph, ONLY : lgamma
+
+  USE eqv,      ONLY : dpsi
+  USE qpoint,   ONLY : nksq, ikks, ikqs
+  USE control_lr, ONLY : lgamma
 
   USE mp_pools,         ONLY : inter_pool_comm
   USE mp,               ONLY : mp_sum
@@ -54,7 +54,7 @@ subroutine drhodv (nu_i0, nper, drhoscf)
   ! the change of density due to perturbations
 
   integer :: mu, ik, ikq, ig, nu_i, nu_j, na_jcart, ibnd, nrec, &
-       ipol, ikk, ipert
+       ipol, ikk, ipert, npw, npwq
   ! counters
   ! ikk: record position for wfc at k
 
@@ -83,19 +83,13 @@ subroutine drhodv (nu_i0, nper, drhoscf)
   !
   !   We need a sum over all k points ...
   !
-  if (nksq > 1) rewind (unit = iunigk)
   do ik = 1, nksq
-     if (nksq > 1) read (iunigk) npw, igk
      ikk = ikks(ik)
      ikq = ikqs(ik)
-     if (lgamma) then
-        npwq = npw
-     else
-        if (nksq > 1) read (iunigk) npwq, igkq
-     endif
+     npw = ngk(ikk)
+     npwq= ngk(ikq)
      if (lsda) current_spin = isk (ikk)
-     call init_us_2 (npwq, igkq, xk (1, ikq), vkb)
-
+     call init_us_2 (npwq, igk_k(1,ikq), xk (1, ikq), vkb)
      do mu = 1, nper
         nrec = (mu - 1) * nksq + ik
         if (nksq > 1 .or. nper > 1) call get_buffer(dpsi, lrdwf, iudwf, nrec)
@@ -105,12 +99,12 @@ subroutine drhodv (nu_i0, nper, drhoscf)
            do ibnd = 1, nbnd
               do ig = 1, npwq
                  aux (ig, ibnd) = dpsi (ig, ibnd) * &
-                      (xk (ipol, ikq) + g (ipol, igkq (ig) ) )
+                      (xk (ipol, ikq) + g (ipol, igk_k(ig,ikq) ) )
               enddo
               if (noncolin) then
                  do ig = 1, npwq
                     aux (ig+npwx, ibnd) = dpsi (ig+npwx, ibnd) * &
-                      (xk (ipol, ikq) + g (ipol, igkq (ig) ) )
+                      (xk (ipol, ikq) + g (ipol, igk_k(ig,ikq) ) )
                  enddo
               endif
            enddo

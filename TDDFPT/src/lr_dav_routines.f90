@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2015 Quantum ESPRESSO group
+! Copyright (C) 2001-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -20,7 +20,7 @@ contains
     !  as the initial vectors of lr davidson algorithm
 
     use kinds,         only : dp
-    use wvfct,         only : nbnd, nbndx, et
+    use wvfct,         only : nbnd, et
     use lr_dav_variables, only : vc_couple,num_init,single_pole,energy_dif,&
                                 & energy_dif_order, p_nbnd_occ, p_nbnd_virt,&
                                 & if_dft_spectrum, reference
@@ -97,7 +97,6 @@ contains
     !IF (ierr /= 0) call errore('lr_dav_alloc_init',"no enough memory",ierr) 
     !allocate(C_vec_b(npwx,nbnd,nks,num_basis_max),stat=ierr) 
     !IF (ierr /= 0) call errore('lr_dav_alloc_init',"no enough memory",ierr) 
-    allocate(svecwork(npwx,nbnd,nks))
     allocate(vecwork(npwx,nbnd,nks))
     allocate(M(num_basis_max,num_basis_max))
     allocate(M_shadow_avatar(num_basis_max,num_basis_max))
@@ -183,7 +182,7 @@ contains
     use lr_variables,         only : evc0, sevc0 ,revc0, evc0_virt,&
                                    & sevc0_virt, nbnd_total, davidson, restart
     use io_global,    only : stdout
-    use wvfct,       only : g2kin,npwx,nbnd,et,npw
+    use wvfct,       only : npwx,nbnd,et
     use gvect,                only : gstart
     use uspp,           only : okvan
     use lr_us
@@ -431,7 +430,7 @@ contains
     use kinds,                only : dp
     use lr_variables,         only : ltammd,&
                                      evc0, sevc0, d0psi
-    use wvfct,                only : nbnd, npwx, npw
+    use wvfct,                only : nbnd, npwx
     use mp,                   only : mp_bcast,mp_barrier                  
     use mp_world,             only : world_comm
     use lr_us
@@ -457,8 +456,7 @@ contains
     do ibr = num_basis_old+1, num_basis
       if(.not.ltammd) then
         ! Calculate new D*vec_b
-        call lr_apply_liouvillian(vec_b(:,:,:,ibr),vecwork(:,:,:),svecwork(:,:,:),.false.)
-        call lr_ortho(vecwork(:,:,:), evc0(:,:,1), 1, 1,sevc0(:,:,1),.true.) ! Project to virtual space
+        call lr_apply_liouvillian(vec_b(:,:,:,ibr),vecwork(:,:,:),.false.)
         if(.not. poor_of_ram2) D_vec_b(:,:,:,ibr)=vecwork(:,:,:)
 
         ! Add new M_D
@@ -473,8 +471,7 @@ contains
         enddo
 
         ! Calculate new C*vec_b
-        call lr_apply_liouvillian(vec_b(:,:,:,ibr),vecwork(:,:,:),svecwork(:,:,:),.true.)
-        call lr_ortho(vecwork(:,:,:), evc0(:,:,1), 1, 1,sevc0(:,:,1),.true.) ! Project to virtual space
+        call lr_apply_liouvillian(vec_b(:,:,:,ibr),vecwork(:,:,:),.true.)
         if(.not. poor_of_ram2) C_vec_b(:,:,:,ibr)=vecwork(:,:,:)
 
         ! Add new M_C
@@ -488,8 +485,7 @@ contains
         enddo
 
       else ! ltammd
-        call lr_apply_liouvillian(vec_b(:,:,:,ibr),vecwork(:,:,:),svecwork(:,:,:),.true.)
-        call lr_ortho(vecwork(:,:,:), evc0(:,:,1), 1, 1,sevc0(:,:,1),.true.)
+        call lr_apply_liouvillian(vec_b(:,:,:,ibr),vecwork(:,:,:),.true.)
         if(.not. poor_of_ram2) then
           D_vec_b(:,:,:,ibr)=vecwork(:,:,:)
           C_vec_b(:,:,:,ibr)=vecwork(:,:,:)
@@ -525,7 +521,7 @@ contains
     use kinds,                only : dp
     use lr_variables,         only : ltammd,&
                                      evc0, sevc0, d0psi
-    use wvfct,                only : nbnd, npwx, npw
+    use wvfct,                only : nbnd, npwx
     use mp,                   only : mp_bcast,mp_barrier
     use mp_world,             only : world_comm
     use lr_us
@@ -649,7 +645,7 @@ contains
     ! Created by X.Ge in Jan. 2013
     !-------------------------------------------------------------------------------
     ! Calculate the residue of appro. eigen vector
-    use lr_dav_variables, only : right_res,left_res,svecwork,C_vec_b,D_vec_b,&
+    use lr_dav_variables, only : right_res,left_res,C_vec_b,D_vec_b,&
                                  kill_left,kill_right,poor_of_ram2,right2,left2,&
                                  right_full,left_full,eign_value_order,residue_conv_thr,&
                                  toadd,left_M,right_M,num_eign,dav_conv,num_basis,zero,max_res,&
@@ -657,7 +653,7 @@ contains
     use lr_variables,    only : evc0, sevc0
     use kinds,  only : dp
     use io_global, only : stdout
-    use wvfct,                only : nbnd, npwx, npw
+    use wvfct,                only : nbnd, npwx
     use lr_dav_debug
     use lr_us
     
@@ -678,10 +674,8 @@ contains
 
     do ieign = 1, num_eign
       if(poor_of_ram2) then ! If D_ C_ basis are not stored, we have to apply liouvillian again
-        call lr_apply_liouvillian(right_full(:,:,:,ieign),right_res(:,:,:,ieign),svecwork(:,:,:),.true.) ! Apply lanczos
-        call lr_apply_liouvillian(left_full(:,:,:,ieign),left_res(:,:,:,ieign),svecwork(:,:,:),.false.)
-        call lr_ortho(right_res(:,:,:,ieign), evc0(:,:,1), 1,1,sevc0(:,:,1),.true.) ! Project to virtual space
-        call lr_ortho(left_res(:,:,:,ieign), evc0(:,:,1), 1,1,sevc0(:,:,1),.true.)
+        call lr_apply_liouvillian(right_full(:,:,:,ieign),right_res(:,:,:,ieign),.true.) ! Apply lanczos
+        call lr_apply_liouvillian(left_full(:,:,:,ieign),left_res(:,:,:,ieign),.false.)
       else ! Otherwise they are be recovered directly by the combination of C_ and D_ basis
         left_res(:,:,:,ieign)=0.0d0
         right_res(:,:,:,ieign)=0.0d0
@@ -974,7 +968,7 @@ contains
     
     use kinds,                only : dp
     use klist,                only : nks
-    use wvfct,                only : npwx,nbnd,npw
+    use wvfct,                only : npwx,nbnd
     use lr_us
     
     implicit none
@@ -994,7 +988,7 @@ contains
     
     use kinds,                only : dp
     use klist,                only : nks
-    use wvfct,                only : npwx,nbnd,npw
+    use wvfct,                only : npwx,nbnd
     
     implicit none
     complex(kind=dp),external :: lr_dot
@@ -1012,23 +1006,24 @@ contains
     ! This routine apply pre-condition to the residue to speed up the
     ! convergence
     use kinds,       only : dp
-    use wvfct,       only : g2kin,npwx,nbnd,et,npw
+    use wvfct,       only : g2kin,npwx,nbnd,et
+    use klist,       only : ngk
     use lr_dav_variables, only : reference, diag_of_h, tr_energy,eign_value_order,&
                      &turn2planb
     use g_psi_mod
     
     implicit none
     complex(dp)  :: vect(npwx,nbnd)
-    integer :: ia,ib,ieign,flag
+    integer :: ig,ibnd,ieign,flag
     real(dp) :: temp,minimum
     
     minimum=0.0001d0
-    do ib = 1, nbnd
-      do ia = 1, npw
-        !temp = g2kin(ia)-et(ib,1)
-        temp = g2kin(ia)-et(ib,1)-reference
+    do ibnd = 1, nbnd
+      do ig = 1, ngk(1)
+        !temp = g2kin(ig)-et(ibnd,1)
+        temp = g2kin(ig)-et(ibnd,1)-reference
         !if( abs(temp) .lt. minimum ) temp = sign(minimum,temp)
-        vect(ia,ib) = vect(ia,ib)/temp
+        vect(ig,ibnd) = vect(ig,ibnd)/temp
       enddo
     enddo
     
@@ -1363,6 +1358,7 @@ contains
     use cell_base,              only : omega
     use mp,                   only : mp_barrier
     use mp_world,               only : world_comm
+    use dv_of_drho_lr
 
     implicit none
     integer :: v1,c1,v2,c2,ia,ir
@@ -1397,7 +1393,7 @@ contains
       dvrss(ir) = w1 * dvrss(ir) * psic(ir)         ! drho = 2*v1*c1 -> dvrss
     enddo
 
-    call dv_of_drho(0,dvrss,.false.)       ! calc the potential change 
+    call dv_of_drho(dvrss,.false.)       ! calc the potential change 
 
     wfck(:,1) = evc0(:,v2,1)
     call invfft_orbital_gamma(wfck(:,:),1,1)  ! FFT: v2 -> psic
@@ -1421,8 +1417,9 @@ contains
     ! Created by X.Ge in Jan. 2013
     !-------------------------------------------------------------------------------
     ! calculate the inner product between two wfcs
-    use kinds,          only : dp
-    use wvfct,                only : npwx, npw
+    use kinds,                only : dp
+    use wvfct,                only : npwx
+    use klist,                only : ngk
     use lr_dav_variables 
     use gvect,                only : gstart
     use mp_global,            only : intra_bgrp_comm
@@ -1434,7 +1431,7 @@ contains
     complex(dp) :: x(npwx), y (npwx)
     integer :: i
 
-    wfc_dot=2.D0*ddot(2*npw,x(:),1,y(:),1)
+    wfc_dot=2.D0*ddot(2*ngk(1),x(:),1,y(:),1)
     if(gstart==2) wfc_dot=wfc_dot-dble(x(1))*dble(y(1))
 
 #ifdef __MPI
@@ -1475,9 +1472,9 @@ contains
     ! This routine initiate basis set with radom vectors
 
     use kinds,          only : dp
-    use wvfct,          only : g2kin,npwx,nbnd,et,npw
+    use wvfct,          only : g2kin,npwx,nbnd,et
     use gvect,          only : gstart
-    use klist,          only : nks
+    use klist,          only : nks, ngk
     use io_global,      only : stdout
     use uspp,           only : okvan
     use lr_variables,   only : evc0, sevc0
@@ -1491,7 +1488,7 @@ contains
     write(stdout,'(5x,"Preconditional random vectors are used as initial vectors ...")')
     do ib = 1, num_init
       do ibnd = 1, nbnd
-        do ipw = 1, npw
+        do ipw = 1, ngk(1)
           call random_number(R)
           call random_number(R2)
           !apply precondition
@@ -1786,7 +1783,7 @@ contains
     ! energy*|R_ij|^2
 
     use kinds,         only : dp
-    use wvfct,         only : nbnd, nbndx, et
+    use wvfct,         only : nbnd, et
     use lr_dav_variables, only : vc_couple,num_init,single_pole,energy_dif,&
                                 & energy_dif_order, p_nbnd_occ, p_nbnd_virt,PI
     use lr_variables, only : nbnd_total,R
@@ -1871,7 +1868,7 @@ contains
     use mp_world,             only : world_comm
     USE cell_base,  ONLY : bg, ibrav, celldm
     USE gvect,      ONLY : gcutm, ngm, nl, nlm
-    USE wvfct,      ONLY : ecutwfc
+    USE gvecw,      ONLY : ecutwfc
     USE ions_base,  ONLY : nat, ityp, ntyp => nsp, atm, zv, tau
     USE io_global,  ONLY : stdout, ionode,ionode_id
     USE io_files,   ONLY : tmp_dir

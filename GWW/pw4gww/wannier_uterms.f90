@@ -22,7 +22,8 @@
   USE basis
   USE klist
   USE constants, ONLY : e2, pi, tpi, fpi
-  USE wvfct,    ONLY : igk, g2kin, npwx, npw, nbnd, nbndx, ecutwfc
+  USE wvfct,     ONLY : npwx, npw, nbnd
+  USE gvecw,     ONLY : gcutw
    USE cell_base, ONLY: at, alat, tpiba, omega, tpiba2
   USE wannier_gw
   USE mp, ONLY : mp_sum
@@ -80,8 +81,7 @@
   
 ! reads wfcs from iunwfc
 
-   CALL gk_sort(xk(1,1),ngm,g,ecutwfc/tpiba2, &
-              &    npw0,igk0,g2kin_bp)
+   CALL gk_sort(xk(1,1),ngm,g,gcutw,npw0,igk0,g2kin_bp)
    allocate(uterms(numw_prod,numw_prod))
    allocate(tmpspacei(max_ngm,n_set),tmpspacej(max_ngm,n_set),fac(max_ngm))
    allocate(umat_tmp(n_set,n_set))
@@ -288,7 +288,7 @@
           else
              n_int_loc=n_int
           endif
-
+         
 
           do ix=-n_int_loc+1,n_int_loc
              do iy=-n_int_loc+1,n_int_loc
@@ -300,11 +300,20 @@
 
                
                    qq(:)=qx(:)+qy(:)+qz(:)+g(:,ig)
-
-
                    qq_fact=qq(1)**2+qq(2)**2+qq(3)**2
                    
-                   vg_q(ig)=vg_q(ig)+1.d0/qq_fact
+                   if(ig==1.and. gstart==2) then
+                      vg_q(1)=vg_q(ig)+1.d0/qq_fact
+                   else
+                      
+                      
+                       qq_fact=qq(1)**2+qq(2)**2+qq(3)**2
+                       vg_q(ig)=vg_q(ig)+1.d0/qq_fact
+                                             
+                   endif
+
+
+                   
                 enddo
              enddo
           enddo

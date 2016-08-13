@@ -22,10 +22,10 @@ SUBROUTINE do_cond(done)
   USE spin_orb,   ONLY : lspinorb, domag
   USE uspp,       ONLY : okvan
   USE gvect,      ONLY : ecutrho
-  USE wvfct,      ONLY : ecutwfc
+  USE gvecw,      ONLY : ecutwfc
   USE symm_base,  ONLY: nsym, s, t_rev, time_reversal
   USE cond
-  USE io_files,   ONLY: outdir, tmp_dir, prefix
+  USE io_files,   ONLY: tmp_dir, prefix
   !!! RECOVER
   USE cond_restart
   USE input_parameters, ONLY: max_seconds
@@ -43,6 +43,7 @@ SUBROUTINE do_cond(done)
   IMPLICIT NONE
   !
   CHARACTER(LEN=256), EXTERNAL :: trimcheck
+  CHARACTER(LEN=256) :: outdir
   !
   LOGICAL, INTENT(OUT) :: done
   !

@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2011 Quantum ESPRESSO group
+! Copyright (C) 2001-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -42,6 +42,7 @@ SUBROUTINE setup()
   USE ions_base,          ONLY : nat, tau, ntyp => nsp, ityp, zv
   USE basis,              ONLY : starting_pot, natomwfc
   USE gvect,              ONLY : gcutm, ecutrho
+  USE gvecw,              ONLY : gcutw, ecutwfc
   USE fft_base,           ONLY : dfftp
   USE fft_base,           ONLY : dffts
   USE grid_subroutines,   ONLY : realspace_grid_init
@@ -59,16 +60,18 @@ SUBROUTINE setup()
   USE ktetra,             ONLY : tetra, ntetra, ltetra
   USE symm_base,          ONLY : s, t_rev, irt, nrot, nsym, invsym, nosym, &
                                  d1,d2,d3, time_reversal, sname, set_sym_bl, &
-                                 find_sym, inverse_s, no_t_rev
-  USE wvfct,              ONLY : nbnd, nbndx, ecutwfc
+                                 find_sym, inverse_s, no_t_rev, allfrac
+  USE wvfct,              ONLY : nbnd, nbndx
   USE control_flags,      ONLY : tr2, ethr, lscf, lmd, david, lecrpa,  &
                                  isolve, niter, noinv, ts_vdw, &
-                                 lbands, use_para_diag, gamma_only
+                                 lbands, use_para_diag, gamma_only, &
+                                 restart
   USE cellmd,             ONLY : calc
   USE uspp_param,         ONLY : upf, n_atom_wfc
   USE uspp,               ONLY : okvan
   USE ldaU,               ONLY : lda_plus_u, init_lda_plus_u
-  USE bp,                 ONLY : gdir, lberry, nppstr, lelfield, lorbm, nx_el, nppstr_3d,l3dstring, efield, lcalc_z2
+  USE bp,                 ONLY : gdir, lberry, nppstr, lelfield, lorbm, nx_el,&
+                                 nppstr_3d,l3dstring, efield
   USE fixed_occ,          ONLY : f_inp, tfixed_occ, one_atom_occupations
   USE funct,              ONLY : set_dft_from_name
   USE mp_pools,           ONLY : kunit
@@ -77,10 +80,16 @@ SUBROUTINE setup()
                                  angle1, angle2, bfield, ux, nspin_lsda, &
                                  nspin_gga, nspin_mag
   USE pw_restart,         ONLY : pw_readfile
+!
+#ifdef __XSD 
+  USE pw_restart,         ONLY : pw_readschema_file, init_vars_from_schema 
+  USE qes_libs_module,    ONLY : qes_reset_output, qes_reset_input, qes_reset_parallel_info, qes_reset_general_info
+  USE qes_types_module,   ONLY : output_type, input_type, parallel_info_type, general_info_type 
+#endif
+!
   USE exx,                ONLY : ecutfock, exx_grid_init, exx_div_check
   USE funct,              ONLY : dft_is_meta, dft_is_hybrid, dft_is_gradient
   USE paw_variables,      ONLY : okpaw
-  USE control_flags,      ONLY : restart
   USE fcp_variables,      ONLY : lfcpopt, lfcpdyn
   !
   IMPLICIT NONE
@@ -90,6 +99,12 @@ SUBROUTINE setup()
   REAL(DP) :: iocc, ionic_charge, one
   !
   LOGICAL, EXTERNAL  :: check_para_diag
+#ifdef __XSD 
+  TYPE(output_type),ALLOCATABLE             :: output_obj 
+  TYPE(input_type),ALLOCATABLE              :: input_obj
+  TYPE(parallel_info_type),ALLOCATABLE      :: parinfo_obj
+  TYPE(general_info_type),ALLOCATABLE       :: geninfo_obj
+#endif  
   !
   ! ... okvan/okpaw = .TRUE. : at least one pseudopotential is US/PAW
   !
@@ -110,6 +125,8 @@ SUBROUTINE setup()
   END IF
 
   IF ( dft_is_hybrid() ) THEN
+     IF ( allfrac ) CALL errore( 'setup ', &
+                         'option use_all_frac incompatible with hybrid XC', 1 )
      IF (.NOT. lscf) CALL errore( 'setup ', &
                          'hybrid XC not allowed in non-scf calculations', 1 )
      IF ( ANY (upf(1:ntyp)%nlcc) ) CALL infomsg( 'setup ', 'BEWARE:' // &
@@ -141,13 +158,27 @@ SUBROUTINE setup()
   !
   nelec = ionic_charge - tot_charge
   !
+#if defined (__XSD)
+     IF ( lbands .OR. ( (lfcpopt .OR. lfcpdyn ) .AND. restart )) THEN 
+        ALLOCATE ( output_obj, input_obj, parinfo_obj, geninfo_obj )
+        CALL pw_readschema_file( ierr , output_obj, input_obj, parinfo_obj, geninfo_obj )
+      END IF 
+#endif 
   IF ( lfcpopt .AND. restart ) THEN
+#if defined (__XSD)
+     CALL init_vars_from_schema( 'fcpopt', ierr,  output_obj, input_obj, parinfo_obj, geninfo_obj) 
+#else
      CALL pw_readfile( 'fcpopt', ierr )
+#endif
      tot_charge = ionic_charge - nelec
   END IF
   !
   IF ( lfcpdyn .AND. restart ) THEN
+#if defined (__XSD)
+     CALL init_vars_from_schema( 'fcpdyn', ierr,  output_obj, input_obj, parinfo_obj, geninfo_obj ) 
+#else
      CALL pw_readfile( 'fcpdyn', ierr )
+#endif
      tot_charge = ionic_charge - nelec
   END IF
   !
@@ -386,6 +417,7 @@ SUBROUTINE setup()
   IF ( doublegrid .AND. (.NOT.okvan .AND. .not.okpaw) ) &
      CALL infomsg ( 'setup', 'no reason to have ecutrho>4*ecutwfc' )
   gcutm = dual * ecutwfc / tpiba2
+  gcutw = ecutwfc / tpiba2
   !
   IF ( doublegrid ) THEN
      !
@@ -443,7 +475,7 @@ SUBROUTINE setup()
         nrot  = 1
         nsym  = 1
         !
-     ELSE IF (lberry .OR. lcalc_z2) THEN
+     ELSE IF (lberry ) THEN
         !
         CALL kp_strings( nppstr, gdir, nrot, s, bg, npk, &
                          k1, k2, k3, nk1, nk2, nk3, nkstot, xk, wk )
@@ -532,8 +564,13 @@ SUBROUTINE setup()
      !
      ! ... if calculating bands, we read the Fermi energy
      !
+#if defined (__XSD)
+     CALL init_vars_from_schema( 'reset', ierr, output_obj, input_obj, parinfo_obj, geninfo_obj )
+     CALL init_vars_from_schema( 'ef',   ierr , output_obj, input_obj,parinfo_obj, geninfo_obj)
+#else
      CALL pw_readfile( 'reset', ierr )
      CALL pw_readfile( 'ef',   ierr )
+#endif 
      CALL errore( 'setup ', 'problem reading ef from file ' // &
              & TRIM( tmp_dir ) // TRIM( prefix ) // '.save', ierr )
 
@@ -550,6 +587,15 @@ SUBROUTINE setup()
           nk1, nk2, nk3, nkstot, xk, wk, ntetra, tetra )
      !
   END IF
+#ifdef __XSD 
+  IF ( lbands .OR. ( (lfcpopt .OR. lfcpdyn ) .AND. restart ) ) THEN 
+     CALL qes_reset_output ( output_obj ) 
+     CALL qes_reset_input ( input_obj ) 
+     CALL qes_reset_parallel_info ( parinfo_obj ) 
+     CALL qes_reset_general_info ( geninfo_obj ) 
+     DEALLOCATE ( output_obj, input_obj, parinfo_obj, geninfo_obj ) 
+  END IF 
+#endif
   !
   !
   IF ( lsda ) THEN

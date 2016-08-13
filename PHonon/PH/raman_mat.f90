@@ -18,20 +18,22 @@ subroutine raman_mat
   USE constants,ONLY : e2, fpi
   USE cell_base,ONLY : at, bg, omega, tpiba
   USE gvect,    ONLY : g
-  USE klist,    ONLY : wk, xk
-  USE io_files, ONLY : iunigk
+  USE klist,    ONLY : wk, xk, ngk, igk_k
   USE buffers,  ONLY : get_buffer
   USE ions_base,ONLY : nat
   USE symme,    ONLY : symtensor3
   USE uspp,     ONLY : nkb, vkb
-  USE wvfct,    ONLY : npw, npwx, nbnd, igk
+  USE wvfct,    ONLY : npwx, nbnd
   USE wavefunctions_module,  ONLY: evc
-  USE eqv,      ONLY : dvpsi
-  USE phus,     ONLY : becp1, alphap
-  USE control_ph, ONLY : nbnd_occ
+  USE phus,     ONLY : alphap
   USE units_ph, ONLY : lrdwf, iudwf, lrwfc, iuwfc
-  USE qpoint,   ONLY : npwq, nksq
   USE ramanm,   ONLY : ramtns, jab, a1j, a2j, lrd2w, iud2w
+
+  USE lrus,     ONLY : becp1
+  USE control_lr, ONLY : nbnd_occ
+  USE qpoint,   ONLY : nksq
+  USE eqv,      ONLY : dvpsi
+
   USE mp_pools, ONLY : inter_pool_comm
   USE mp_bands, ONLY : intra_bgrp_comm
   USE mp,       ONLY : mp_sum
@@ -39,7 +41,7 @@ subroutine raman_mat
 
   logical :: wr_all
   integer :: ik, ig, ipa, ipb, icr, jcr, iat, ibnd, jbnd, imod, nrec, &
-             il, ntm, ipol
+             il, ntm, ipol, npw, npwq
   ! counter on k-points
   ! counter on electric field polarizations
   ! counter on electric field polarizations
@@ -95,7 +97,6 @@ subroutine raman_mat
   enddo
 
   wrk (:,:,:) = 0.d0
-  if (nksq.gt.1) rewind (unit = iunigk)
 
   !
   ! The raman tensor is computed as the sum of three different contribution
@@ -113,11 +114,10 @@ subroutine raman_mat
   !   (units are Bohr^-1 ).
   !       weight = -2.d0*wk(ik)*e2
      weight = - 2.d0 * wk (ik) * e2 * fpi / omega
-
-     if (nksq.gt.1) read (iunigk) npw, igk
+     npw = ngk(ik)
      npwq = npw
      if (nksq.gt.1) call get_buffer (evc, lrwfc, iuwfc, ik)
-     call init_us_2 (npw, igk, xk (1,ik), vkb)
+     call init_us_2 (npw, igk_k(1,ik), xk (1,ik), vkb)
 
      do ipa = 1, 3
         nrec = (ipa - 1) * nksq + ik
@@ -191,7 +191,7 @@ subroutine raman_mat
                  do ig = 1, npw
                     aux1 (ig, ibnd) = evc(ig,ibnd) *               &
                                       tpiba * (0.d0,1.d0) *        &
-                                ( xk(ipb,ik) + g(ipb,igk(ig)) )
+                                ( xk(ipb,ik) + g(ipb,igk_k(ig,ik)) )
                  enddo
               enddo
               call calbec (npw, vkb, aux1, alphap (ipb,ik) )

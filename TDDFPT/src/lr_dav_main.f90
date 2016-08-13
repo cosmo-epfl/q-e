@@ -40,9 +40,6 @@ PROGRAM lr_dav_main
   USE plugin_flags,          ONLY : use_environ
   USE environ_info,          ONLY : environ_summary
 #endif
-
-  !Debugging
-  USE lr_variables, ONLY: check_all_bands_gamma, check_density_gamma,check_vector_gamma
   !
   IMPLICIT NONE
   INTEGER            :: ibnd_occ,ibnd_virt,ibnd,ip
@@ -52,8 +49,16 @@ PROGRAM lr_dav_main
 #ifdef __MPI
   CALL mp_startup ( )
 #endif
-  tddfpt=.TRUE. !Let the phonon routines know that they are doing tddfpt.
-  davidson=.true. ! To tell the code that we are using davidson method
+  !
+  ! Let the routines of the Environ plugin know that 
+  ! they are doing TDDFPT. 
+  !
+  tddfpt = .true.
+  !
+  ! Tell to the code that we are using the Davidson method
+  !
+  davidson = .true.
+  !
   CALL environment_start ( code1 )
   CALL start_clock('lr_dav_main')
 
@@ -136,7 +141,7 @@ PROGRAM lr_dav_main
 CONTAINS
   SUBROUTINE lr_print_preamble()
 
-    USE lr_variables, ONLY : no_hxc, itermax
+    USE lr_variables, ONLY : no_hxc, d0psi_rs
     USE uspp,         ONLY : okvan
     USE funct,        only : dft_is_hybrid
     USE martyna_tuckerman,   ONLY : do_comp_mt
@@ -177,9 +182,10 @@ CONTAINS
  
     IF (no_hxc)  THEN
        WRITE(stdout,'(5x,"No Hartree/Exchange/Correlation")')
-    ELSEIF (dft_is_hybrid()) THEN
+    ELSEIF (dft_is_hybrid() .AND. .NOT.d0psi_rs) THEN
        WRITE(stdout, '(/5x,"Use of exact-exchange enabled. Note the EXX correction to the [H,X]", &
-            &/5x,"commutator is NOT included hence the f-sum rule will be violated.")')
+                     & /5x,"commutator is NOT included hence the f-sum rule will be violated.",   &
+                     & /5x,"You can try to use the variable d0psi_rs=.true. (see the documentation).")' )
     ENDIF
   END SUBROUTINE lr_print_preamble
 

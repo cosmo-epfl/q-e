@@ -108,9 +108,6 @@ MODULE read_namelists_module
        disk_io  = 'default'
        dipfield = .FALSE.
        lberry   = .FALSE.
-       lcalc_z2 = .FALSE.
-       z2_m_threshold = 0.8d0
-       z2_z_threshold = 0.05d0
        gdir     = 0
        nppstr   = 0
        wf_collect = .FALSE.
@@ -130,7 +127,7 @@ MODULE read_namelists_module
        !
        CALL get_environment_variable( 'QEXML', input_xml_schema_file )
        IF ( TRIM(input_xml_schema_file) == ' ') &
-          input_xml_schema_file='./qes.xsd'
+          input_xml_schema_file='./qes.xml'
        !
        RETURN
        !
@@ -225,6 +222,7 @@ MODULE read_namelists_module
        ! ... non collinear program variables
        !
        lspinorb = .FALSE.
+       lforcet = .FALSE.
        starting_spin_angle=.FALSE.
        noncolin = .FALSE.
        lambda = 1.0_DP
@@ -252,6 +250,7 @@ MODULE read_namelists_module
        london_s6   = 0.75_DP
        london_rcut = 200.00_DP
        london_c6   = -1.0_DP
+       london_rvdw = -1.0_DP
        ts_vdw          = .FALSE.
        ts_vdw_isolated = .FALSE.
        ts_vdw_econv_thr = 1.E-6_DP
@@ -491,6 +490,12 @@ MODULE read_namelists_module
        w_1              = 0.01_DP
        w_2              = 0.50_DP
        !
+       l_mplathe=.false.
+       n_muller=0
+       np_muller=1
+       l_exit_muller=.false.
+       
+
        RETURN
        !
      END SUBROUTINE
@@ -693,7 +698,6 @@ MODULE read_namelists_module
        CALL mp_bcast( outdir,        ionode_id, intra_image_comm )
        CALL mp_bcast( wfcdir,        ionode_id, intra_image_comm )
        CALL mp_bcast( prefix,        ionode_id, intra_image_comm )
-       CALL mp_bcast( srvaddress,    ionode_id, intra_image_comm ) 
        CALL mp_bcast( max_seconds,   ionode_id, intra_image_comm )
        CALL mp_bcast( ekin_conv_thr, ionode_id, intra_image_comm )
        CALL mp_bcast( etot_conv_thr, ionode_id, intra_image_comm )
@@ -705,9 +709,6 @@ MODULE read_namelists_module
        CALL mp_bcast( tefield2,      ionode_id, intra_image_comm )
        CALL mp_bcast( dipfield,      ionode_id, intra_image_comm )
        CALL mp_bcast( lberry,        ionode_id, intra_image_comm )
-       CALL mp_bcast( lcalc_z2,      ionode_id, intra_image_comm )
-       CALL mp_bcast( z2_m_threshold,ionode_id, intra_image_comm )
-       CALL mp_bcast( z2_z_threshold,ionode_id, intra_image_comm )
        CALL mp_bcast( gdir,          ionode_id, intra_image_comm )
        CALL mp_bcast( nppstr,        ionode_id, intra_image_comm )
        CALL mp_bcast( point_label_type,   ionode_id, intra_image_comm )
@@ -818,6 +819,7 @@ MODULE read_namelists_module
        ! ... non collinear broadcast
        !
        CALL mp_bcast( lspinorb,                  ionode_id, intra_image_comm )
+       CALL mp_bcast( lforcet,                   ionode_id, intra_image_comm )
        CALL mp_bcast( starting_spin_angle,       ionode_id, intra_image_comm )
        CALL mp_bcast( noncolin,                  ionode_id, intra_image_comm )
        CALL mp_bcast( angle1,                    ionode_id, intra_image_comm )
@@ -840,6 +842,7 @@ MODULE read_namelists_module
        CALL mp_bcast( london_s6,                 ionode_id, intra_image_comm )
        CALL mp_bcast( london_rcut,               ionode_id, intra_image_comm )
        CALL mp_bcast( london_c6,                 ionode_id, intra_image_comm )
+       CALL mp_bcast( london_rvdw,               ionode_id, intra_image_comm )
        CALL mp_bcast( xdm,                       ionode_id, intra_image_comm )
        CALL mp_bcast( xdm_a1,                    ionode_id, intra_image_comm )
        CALL mp_bcast( xdm_a2,                    ionode_id, intra_image_comm )
@@ -933,6 +936,8 @@ MODULE read_namelists_module
        CALL mp_bcast( mixing_beta,          ionode_id, intra_image_comm )
        CALL mp_bcast( mixing_ndim,          ionode_id, intra_image_comm )
        CALL mp_bcast( tqr,                  ionode_id, intra_image_comm )
+       CALL mp_bcast( tq_smoothing,         ionode_id, intra_image_comm )
+       CALL mp_bcast( tbeta_smoothing,      ionode_id, intra_image_comm )
        CALL mp_bcast( diagonalization,      ionode_id, intra_image_comm )
        CALL mp_bcast( diago_thr_init,       ionode_id, intra_image_comm )
        CALL mp_bcast( diago_cg_maxiter,     ionode_id, intra_image_comm )
@@ -1048,6 +1053,12 @@ MODULE read_namelists_module
        CALL mp_bcast( w_1,              ionode_id, intra_image_comm )
        CALL mp_bcast( w_2,              ionode_id, intra_image_comm )
        !
+       CALL mp_bcast(l_mplathe,         ionode_id, intra_image_comm )
+       CALL mp_bcast(n_muller,          ionode_id, intra_image_comm ) 
+       CALL mp_bcast(np_muller,         ionode_id, intra_image_comm )
+       CALL mp_bcast(l_exit_muller,     ionode_id, intra_image_comm )
+
+
        RETURN
        !
      END SUBROUTINE
@@ -1277,8 +1288,6 @@ MODULE read_namelists_module
              CALL infomsg( sub_name,' dipfield not yet implemented ')
           IF( lberry ) &
              CALL infomsg( sub_name,' lberry not implemented yet ')
-          IF( lcalc_z2 ) &
-             CALL infomsg( sub_name,' lcalc_z2 incompatible with CP ')
           IF( gdir /= 0 ) &
              CALL infomsg( sub_name,' gdir not used ')
           IF( nppstr /= 0 ) &
@@ -1695,9 +1704,6 @@ MODULE read_namelists_module
                 ion_dynamics = 'beeman'
              END IF
              !
-          CASE ( 'driver' )
-             !do nothing
-             !             
           CASE DEFAULT
              !
              CALL errore( sub_name,' calculation '// &
@@ -1858,7 +1864,6 @@ MODULE read_namelists_module
        IF ( ionode ) THEN
           !
           IF ( TRIM( calculation ) == 'relax'    .OR. &
-               TRIM( calculation ) == 'driver'   .OR. &
                TRIM( calculation ) == 'md'       .OR. &
                TRIM( calculation ) == 'vc-relax' .OR. &
                TRIM( calculation ) == 'vc-md'    .OR. &
@@ -1885,7 +1890,6 @@ MODULE read_namelists_module
        IF( ionode ) THEN
           IF( TRIM( calculation ) == 'vc-relax' .OR. &
               TRIM( calculation ) == 'vc-cp'    .OR. &
-              TRIM( calculation ) == 'driver'   .OR. &
               TRIM( calculation ) == 'vc-md'    .OR. &
               TRIM( calculation ) == 'vc-md'    .OR. & 
               TRIM( calculation ) == 'vc-cp-wf') THEN

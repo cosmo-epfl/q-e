@@ -34,7 +34,7 @@
       use gvecs,                only: gcutms, gvecs_init
       use gvecw,                only: gkcut, gvecw_init, g2kin_init
       USE smallbox_subs,        ONLY: ggenb
-      USE fft_base,             ONLY: dfftp, dffts, dfftb, dfft3d
+      USE fft_base,             ONLY: dfftp, dffts, dfftb, dfft3d, dtgs
       USE fft_smallbox,         ONLY: cft_b_omp_init
       USE stick_set,            ONLY: pstickset
       USE control_flags,        ONLY: gamma_only, smallmem
@@ -138,7 +138,7 @@
 
       CALL pstickset( gamma_only, bg, gcutm, gkcut, gcutms, &
         dfftp, dffts, ngw_ , ngm_ , ngs_ , me_bgrp, root_bgrp, &
-        nproc_bgrp, intra_bgrp_comm, ntask_groups, ionode, stdout, dfft3d )
+        nproc_bgrp, intra_bgrp_comm, ntask_groups, ionode, stdout, dtgs, dfft3d )
       !
       !
       ! ... Initialize reciprocal space local and global dimensions
@@ -256,10 +256,11 @@
       USE ions_positions,   ONLY: allocate_ions_positions, tau0, taus
       use cp_restart,       only: cp_read_cell
       USE fft_base,         ONLY: dfftb
-      USE fft_types,        ONLY: fft_box_allocate
+      USE fft_smallbox_type,      ONLY: fft_box_allocate
       USE cp_main_variables,ONLY: ht0, htm, taub
       USE cp_interfaces,    ONLY: newinit
       USE constants,        ONLY: amu_au
+      USE matrix_inversion
 
       implicit none
       !

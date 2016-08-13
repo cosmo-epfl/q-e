@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2004 PWSCF group
+! Copyright (C) 2001-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -16,26 +16,28 @@ subroutine deallocate_phq
   USE wavefunctions_module,  ONLY: evc
 
   USE ramanm, ONLY: ramtns
-  USE modes, ONLY : tmq, t, npert, u, rtau, name_rap_mode, num_rap_mode
-  USE qpoint, ONLY : eigqts, igkq, ikks, ikqs, nksq, xk_col
+  USE modes, ONLY : tmq, t, npert, u, name_rap_mode, num_rap_mode
   USE efield_mod, ONLY : zstareu, zstarue, zstarue0, zstareu0, &
                          zstarue0_rec
-  USE phus, ONLY : int1, int1_nc, int2, int2_so, int3, int3_nc, int3_paw, &
+  USE phus, ONLY : int1, int1_nc, int2, int2_so, &
                    int4, int4_nc, int5, int5_so, becsum_nc, &
-                   becsumort, alphasum, alphasum_nc, dpqq, dpqq_so, &
-                   becp1, alphap
-  USE gc_ph,   ONLY: grho, gmag, dvxc_rr,  dvxc_sr,  dvxc_ss, dvxc_s, &
-                    vsgga, segni
+                   becsumort, alphasum, alphasum_nc, &
+                   alphap
   USE gamma_gamma, ONLY : with_symmetry, has_equivalent, equiv_atoms, &
                    n_equiv_atoms
-  USE eqv,     ONLY : dmuxc, vlocq, dpsi, dvpsi, evq, eprec
   USE nlcc_ph, ONLY : drc
   USE units_ph, ONLY : this_dvkb3_is_on_file, this_pcxpsi_is_on_file
   USE dynmat, ONLY : dyn00, dyn_rec, dyn, w2
-  USE control_ph, ONLY : lgamma
   USE el_phon, ONLY : el_ph_mat
   USE freq_ph, ONLY : polar
 
+  USE lrus,         ONLY : int3, int3_nc, int3_paw, becp1, dpqq, dpqq_so
+  USE lr_symm_base, ONLY : rtau
+  USE gc_lr,        ONLY : grho, gmag, dvxc_rr,  dvxc_sr,  dvxc_ss, dvxc_s, &
+                           vsgga, segni
+  USE qpoint,       ONLY : eigqts, igkq, ikks, ikqs, nksq, xk_col
+  USE eqv,          ONLY : dmuxc, vlocq, dpsi, dvpsi, evq
+  USE control_lr,   ONLY : lgamma, nbnd_occ
 
   IMPLICIT NONE
   INTEGER :: ik, ipol
@@ -54,7 +56,6 @@ subroutine deallocate_phq
   !
   if(allocated(vlocq)) deallocate (vlocq)
   if(allocated(dmuxc)) deallocate (dmuxc)
-  if(allocated(eprec)) deallocate (eprec)
   !
   if(allocated(ikks)) deallocate (ikks)
   if(allocated(ikqs)) deallocate (ikqs)
@@ -134,6 +135,8 @@ subroutine deallocate_phq
   IF (allocated(with_symmetry))    DEALLOCATE(with_symmetry)
   IF (allocated(n_equiv_atoms))    DEALLOCATE(n_equiv_atoms)
   IF (allocated(equiv_atoms))      DEALLOCATE(equiv_atoms)
+
+  IF (allocated(nbnd_occ))         DEALLOCATE(nbnd_occ)
 
   return
 end subroutine deallocate_phq

@@ -108,12 +108,13 @@ proc ::helpdoc::elementTag_ {args} {
     variable state
     variable elemArr
 
+    set tag  [tag -2]
+    
     if { $tree == "" } {
 	# an element tag has been specified before rootelement
 	::tclu::abort "an element \"$tag\" specified before the rootelement \"$state(rootElem)\""
     }
 
-    set tag  [tag -2]
     set node [$tree insert [$stack peek] end]
     set code [lindex $args end]
 
@@ -125,7 +126,7 @@ proc ::helpdoc::elementTag_ {args} {
     #puts "array(IDENT,*):    [array names elemArr IDENT,*]\n"
     #puts "array(ATTRLIST,*): [array names elemArr ATTRLIST,*]\n"
 
-    if { [info exists elemArr(TEXT,$tag)] || [info exists elemArr(STRING,$tag)] } {
+    if { [info exists elemArr(TEXT,$tag)] || [info exists elemArr(STRING,$tag)] || [info exists elemArr(CLIST,$tag)] } {
 	# we have a simple-element (leaf)
 	$tree set $node text [lindex $args 0]
 	parseTagMsg_; puts ok

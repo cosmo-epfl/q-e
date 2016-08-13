@@ -12,16 +12,17 @@ subroutine addcore (mode, drhoc)
   !
   !
 
-  USE kinds, only : DP
-  use uspp_param, only: upf
-  use ions_base, only: nat, ityp
-  use cell_base, only: tpiba
-  use fft_base,  only: dfftp
+  USE kinds,      only : DP
+  use uspp_param, only : upf
+  use ions_base,  only : nat, ityp
+  use cell_base,  only : tpiba
+  use fft_base,   only : dfftp
   use fft_interfaces, only: invfft
-  use gvect, only: ngm, nl, mill, eigts1, eigts2, eigts3, g
-  use modes, only: u
-  use qpoint, only: eigqts, xq
-  use nlcc_ph, only: nlcc_any, drc
+  use gvect,   only : ngm, nl, mill, eigts1, eigts2, eigts3, g
+  use modes,   only : u
+  use qpoint,  only : eigqts, xq
+  use nlcc_ph, only : drc
+  use uspp,    only : nlcc_any
   implicit none
 
   !
@@ -74,3 +75,4 @@ subroutine addcore (mode, drhoc)
   return
 
 end subroutine addcore
+

@@ -434,15 +434,6 @@ CONTAINS
     CASE ( 'lberry' )
        CALL iotk_scan_dat_inside( xmlinputunit, lberry, ierr = ierr )
        !
-    CASE ( 'lcalc_z2' )
-       CALL iotk_scan_dat_inside( xmlinputunit, lcalc_z2, ierr = ierr )
-       !
-    CASE ( 'z2_m_threshold' )
-       CALL iotk_scan_dat_inside( xmlinputunit, z2_m_threshold, ierr = ierr )
-       !
-    CASE ( 'z2_z_threshold' )
-       CALL iotk_scan_dat_inside( xmlinputunit, z2_z_threshold, ierr = ierr )
-       !
     CASE ( 'lda_plus_u' ) 
        CALL iotk_scan_dat_inside( xmlinputunit, lda_plus_u, ierr = ierr )
        !
@@ -469,6 +460,9 @@ CONTAINS
        !
     CASE ( 'lspinorb' ) 
        CALL iotk_scan_dat_inside( xmlinputunit, lspinorb, ierr = ierr )
+       !
+    CASE ( 'lforcet' )
+       CALL iotk_scan_dat_inside( xmlinputunit, lforcet, ierr = ierr )
        !
     CASE ( 'max_seconds' )
        CALL iotk_scan_dat_inside( xmlinputunit, max_seconds, ierr = ierr )
@@ -707,6 +701,12 @@ CONTAINS
        !
     CASE ( 'tqr' ) 
        CALL iotk_scan_dat_inside( xmlinputunit, tqr, ierr = ierr )
+       !
+    CASE ( 'tq_smoothing' ) 
+       CALL iotk_scan_dat_inside( xmlinputunit, tq_smoothing, ierr = ierr )
+       !
+    CASE ( 'tbeta_smoothing' ) 
+       CALL iotk_scan_dat_inside( xmlinputunit, tbeta_smoothing, ierr = ierr )
        !
     CASE ( 'trust_radius_ini' ) 
        CALL iotk_scan_dat_inside( xmlinputunit, trust_radius_ini, ierr = ierr )

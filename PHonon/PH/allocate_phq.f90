@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2003 PWSCF group
+! Copyright (C) 2001-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -17,7 +17,7 @@ subroutine allocate_phq
   USE kinds, only : DP
   USE ions_base, ONLY : nat, ntyp => nsp
   USE klist, only : nks, nkstot
-  USE wvfct, ONLY : nbnd, igk, npwx
+  USE wvfct, ONLY : nbnd, npwx
   USE gvect, ONLY : ngm
   USE lsda_mod, ONLY : nspin
   USE noncollin_module, ONLY : noncolin, npol, nspin_mag
@@ -30,19 +30,22 @@ subroutine allocate_phq
   USE uspp_param, ONLY: nhm
   USE ramanm, ONLY: ramtns, lraman
 
-  USE qpoint, ONLY : nksq, eigqts, igkq, xk_col
-  USE phus, ONLY : int1, int1_nc, int2, int2_so, int3, int3_nc, int3_paw, &
-                   int4, int4_nc, int5, int5_so, becsumort, dpqq, &
-                   dpqq_so, alphasum, alphasum_nc, becsum_nc, &
-                   becp1, alphap
+  USE phus, ONLY : int1, int1_nc, int2, int2_so, &
+                   int4, int4_nc, int5, int5_so, becsumort, &
+                   alphasum, alphasum_nc, becsum_nc, &
+                   alphap
   USE efield_mod, ONLY : zstareu, zstareu0, zstarue0, zstarue0_rec, zstarue
-  USE eqv, ONLY : dpsi, evq, vlocq, dmuxc, dvpsi, eprec
   USE units_ph, ONLY : this_pcxpsi_is_on_file, this_dvkb3_is_on_file
   USE dynmat, ONLY : dyn00, dyn, dyn_rec, w2
-  USE modes, ONLY : u, rtau, npert, name_rap_mode, num_rap_mode
-  USE control_ph, ONLY :  lgamma
+  USE modes, ONLY : u, npert, name_rap_mode, num_rap_mode
   USE el_phon, ONLY : el_ph_mat, elph
   USE freq_ph, ONLY : polar, nfs
+
+  USE lrus,         ONLY : becp1, dpqq, dpqq_so
+  USE qpoint,       ONLY : nksq, eigqts, xk_col
+  USE eqv,          ONLY : dpsi, evq, vlocq, dmuxc, dvpsi
+  USE lr_symm_base, ONLY : rtau
+  USE control_lr,   ONLY : lgamma
 
   implicit none
   INTEGER :: ik, ipol
@@ -51,16 +54,14 @@ subroutine allocate_phq
   !
   if (lgamma) then
      !
-     !  q=0  : evq and igkq are pointers to evc and igk
+     !  q=0  : evq is a pointer to evc
      !
      evq  => evc
-     igkq => igk
   else
      !
-     !  q!=0 : evq, igkq are allocated and calculated at point k+q
+     !  q!=0 : evq is allocated and calculated at point k+q
      !
      allocate (evq ( npwx*npol , nbnd))
-     allocate (igkq ( npwx))
   endif
   !
   allocate (dvpsi ( npwx*npol , nbnd))
@@ -68,7 +69,6 @@ subroutine allocate_phq
   !
   allocate (vlocq ( ngm , ntyp))
   allocate (dmuxc ( dfftp%nnr , nspin_mag , nspin_mag))
-  allocate (eprec ( nbnd, nksq) )
   !
   allocate (eigqts ( nat))
   allocate (rtau ( 3, 48, nat))

@@ -32,7 +32,7 @@ SUBROUTINE forces()
   USE lsda_mod,      ONLY : nspin
   USE symme,         ONLY : symvector
   USE vlocal,        ONLY : strf, vloc
-  USE force_mod,     ONLY : force, lforce
+  USE force_mod,     ONLY : force, lforce, sumfor
   USE scf,           ONLY : rho
   USE ions_base,     ONLY : if_pos
   USE ldaU,          ONLY : lda_plus_u, U_projection
@@ -48,6 +48,7 @@ SUBROUTINE forces()
   USE xdm_module,    ONLY : force_xdm
   USE tsvdw_module,  ONLY : FtsvdW
   USE esm,           ONLY : do_comp_esm, esm_bc, esm_force_ew
+  USE qmmm,          ONLY : qmmm_mode
   !
   IMPLICIT NONE
   !
@@ -68,8 +69,8 @@ SUBROUTINE forces()
 !
   COMPLEX(DP), ALLOCATABLE :: auxg(:), auxr(:)
 !
-  REAL(DP) :: sumfor, sumscf, sum_mm
-  REAL(DP),PARAMETER :: eps = 1.e-12_dp
+  REAL(DP) :: sumscf, sum_mm
+  REAL(DP), PARAMETER :: eps = 1.e-12_dp
   INTEGER  :: ipol, na
     ! counter on polarization
     ! counter on atoms
@@ -188,11 +189,7 @@ SUBROUTINE forces()
         IF (lelfield)  force(ipol,na) = force(ipol,na) + forces_bp_efield(ipol,na)
         IF (do_comp_mt)force(ipol,na) = force(ipol,na) + force_mt(ipol,na) 
 
-        IF ( do_comp_esm .and. ( esm_bc .ne. 'pbc' ) ) THEN
-           IF ( ipol .ne. 3 ) sumfor = sumfor + force(ipol,na)
-        ELSE
-           sumfor = sumfor + force(ipol,na)
-        ENDIF
+        sumfor = sumfor + force(ipol,na)
         !
      END DO
      !
@@ -201,33 +198,19 @@ SUBROUTINE forces()
         ! ... impose total force along xy = 0
         !
         DO na = 1, nat
-           !
            IF ( ipol .ne. 3) force(ipol,na) = force(ipol,na)  &
                                             - sumfor / DBLE ( nat )
-           !
         END DO
-     ELSE
         !
-        ! ... impose total force = 0
+     ELSE IF ( qmmm_mode < 0 ) THEN
+        !
+        ! ... impose total force = 0 except in a QM-MM calculation
         !
         DO na = 1, nat
-           !
            force(ipol,na) = force(ipol,na) - sumfor / DBLE( nat ) 
-           !
         END DO
+        !
      ENDIF
-     !
-#ifdef __MS2
-     !
-     ! ... impose total force of the quantum subsystem /= 0
-     !
-     DO na = 1, nat
-        !
-        force(ipol,na) = force(ipol,na) + sumfor / DBLE( nat )
-        !
-     END DO
-     !
-#endif
      !
   END DO
   !
@@ -361,7 +344,7 @@ SUBROUTINE forces()
   !
   CALL stop_clock( 'forces' )
   !
-  IF ( ( sumfor < 10.D0*sumscf ) .AND. ( sumfor > eps ) ) &
+  IF ( ( sumfor < 10.D0*sumscf ) .AND. ( sumfor > nat*eps ) ) &
   WRITE( stdout,'(5x,"SCF correction compared to forces is large: ", &
                    &  "reduce conv_thr to get better values")')
   !

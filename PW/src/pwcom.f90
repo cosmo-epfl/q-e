@@ -7,6 +7,7 @@
 !
 !--------------------------------------------------------------------------
 !
+!
 MODULE klist
   !
   ! ... The variables for the k-points
@@ -14,6 +15,7 @@ MODULE klist
   USE kinds,      ONLY : DP
   USE parameters, ONLY : npk
   !
+  IMPLICIT NONE
   SAVE
   !
   CHARACTER (len=32) :: &
@@ -31,7 +33,9 @@ MODULE klist
   REAL(DP) :: &
        qnorm= 0.0_dp      ! |q|, used in phonon+US calculations only
   INTEGER, ALLOCATABLE :: &
-       ngk(:)              ! number of plane waves for each k point
+       igk_k(:,:),&       ! index of G corresponding to a given index of k+G
+       ngk(:)             ! number of plane waves for each k point
+  !
   INTEGER :: &
        nks,               &! number of k points in this pool
        nkstot,            &! total number of k points
@@ -42,8 +46,42 @@ MODULE klist
        two_fermi_energies ! if .TRUE.: nelup and neldw set ef_up and ef_dw
                           ! separately
   !
+CONTAINS
+  !
+  SUBROUTINE init_igk ( npwx, ngm, g, gcutw )
+    !
+    ! ... Initialize indices igk_k and number of plane waves per k-point:
+    ! ...    (k_ik+G)_i = k_ik+G_igk,   i=1,ngk(ik), igk=igk_k(i,ik)
+    !
+    INTEGER, INTENT (IN) :: npwx, ngm
+    REAL(dp), INTENT(IN) :: gcutw, g(3,ngm)
+    !
+    REAL(dp), ALLOCATABLE :: gk (:)
+    INTEGER :: ik
+    !
+
+    IF(.NOT.ALLOCATED(igk_k)) ALLOCATE ( igk_k(npwx,nks))
+    IF(.NOT.ALLOCATED(ngk)) ALLOCATE ( ngk(nks))
+    
+    ALLOCATE ( gk(npwx) )
+    igk_k(:,:) = 0
+    !
+    ! ... The following loop must NOT be called more than once in a run
+    ! ... or else there will be problems with variable-cell calculations
+    !
+    DO ik = 1, nks
+       CALL gk_sort( xk(1,ik), ngm, g, gcutw, ngk(ik), igk_k(1,ik), gk )
+    END DO
+    DEALLOCATE ( gk )
+    !
+  END SUBROUTINE init_igk
+  !
+  SUBROUTINE deallocate_igk ( ) 
+  IF ( ALLOCATED( ngk ) )        DEALLOCATE( ngk )
+  IF ( ALLOCATED( igk_k ) )      DEALLOCATE( igk_k )
+  END SUBROUTINE deallocate_igk
+
 END MODULE klist
-!
 !
 MODULE lsda_mod
   !
@@ -182,13 +220,6 @@ MODULE wvfct
        nbnd,             &! number of bands
        npw,              &! the number of plane waves
        current_k          ! the index of k-point under consideration
-  INTEGER, ALLOCATABLE, TARGET :: &
-       igk(:)             ! index of G corresponding to a given index of k+G
-  REAL(DP) :: &
-       ecutwfc,       &! energy cut-off
-       ecfixed,       &!
-       qcutz = 0.0_DP,&! For the modified Ekin functional
-       q2sigma         !
   REAL(DP), ALLOCATABLE :: &
        et(:,:),          &! eigenvalues of the hamiltonian
        wg(:,:),          &! the weight of each k point and band
@@ -237,6 +268,8 @@ MODULE force_mod
   !
   REAL(DP), ALLOCATABLE :: &
        force(:,:)       ! the force on each atom
+  REAL(DP) :: &
+       sumfor           ! norm of the gradient (forces)
   REAL(DP) :: &
        sigma(3,3)       ! the stress acting on the system
   LOGICAL :: &
@@ -298,17 +331,17 @@ MODULE us
   SAVE
   !
   INTEGER :: &
-       nqxq,             &! size of interpolation table
-       nqx                ! number of interpolation points
+       nqxq,            &! size of interpolation table
+       nqx               ! number of interpolation points
   REAL(DP), PARAMETER:: &
-       dq = 0.01D0           ! space between points in the pseudopotential tab.
+       dq = 0.01D0        ! space between points in the pseudopotential tab.
   REAL(DP), ALLOCATABLE :: &
-       qrad(:,:,:,:),         &! radial FT of Q functions
-       tab(:,:,:),            &! interpolation table for PPs
-       tab_at(:,:,:)           ! interpolation table for atomic wfc
+       qrad(:,:,:,:),   &! radial FT of Q functions
+       tab(:,:,:),      &! interpolation table for PPs
+       tab_at(:,:,:)     ! interpolation table for atomic wfc
   LOGICAL :: spline_ps = .false.
   REAL(DP), ALLOCATABLE :: &
-       tab_d2y(:,:,:)            ! for cubic splines
+       tab_d2y(:,:,:)    ! for cubic splines
   !
 END MODULE us
 !
@@ -367,10 +400,11 @@ MODULE spin_orb
   SAVE
 
   LOGICAL :: &
-      lspinorb,  &       ! if .TRUE. this is a spin-orbit calculation
-      starting_spin_angle, & ! if .TRUE. the initial wavefunctions are 
-                             ! spin-angle functions. 
-      domag              ! if .TRUE. magnetization is computed
+      lspinorb,            &  ! if .TRUE. this is a spin-orbit calculation
+      lforcet,             &  ! if .TRUE. apply Force Theorem to calculate MAE 
+      starting_spin_angle, &  ! if .TRUE. the initial wavefunctions are 
+                              ! spin-angle functions. 
+      domag                   ! if .TRUE. magnetization is computed
 
 
   COMPLEX (DP) :: rot_ylm(2*lmaxx+1,2*lmaxx+1)  ! transform real

@@ -221,7 +221,7 @@ MODULE xml_io_base
       !
       USE io_global,         ONLY : ionode, ionode_id
       USE mp_images,         ONLY : intra_image_comm
-      USE control_flags,     ONLY : lkpoint_dir, tqr
+      USE control_flags,     ONLY : lkpoint_dir, tqr, tq_smoothing, tbeta_smoothing
       !
       IMPLICIT NONE
       !
@@ -270,6 +270,13 @@ MODULE xml_io_base
          !
          IF ( .NOT. found ) tqr = .FALSE. 
          !
+         CALL iotk_scan_dat( iunpun, "TQ_SMOOTHING", tq_smoothing, FOUND = found)
+         !
+         IF ( .NOT. found ) tq_smoothing = .FALSE. 
+         !
+         CALL iotk_scan_dat( iunpun, "TBETA_SMOOTHING", tbeta_smoothing, FOUND = found)
+         !
+         IF ( .NOT. found ) tbeta_smoothing = .FALSE. 
          !
          IF ( .NOT. back_compat ) THEN
              !
@@ -286,6 +293,10 @@ MODULE xml_io_base
       CALL mp_bcast( lkpoint_dir, ionode_id, intra_image_comm )
       !
       CALL mp_bcast( tqr, ionode_id, intra_image_comm )
+      !
+      CALL mp_bcast( tq_smoothing, ionode_id, intra_image_comm )
+      !
+      CALL mp_bcast( tbeta_smoothing, ionode_id, intra_image_comm )
       !
       pp_check_file = lval
       !

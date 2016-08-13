@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2015 Quantum ESPRESSO group
+! Copyright (C) 2001-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -17,15 +17,18 @@ SUBROUTINE lr_dealloc()
   USE lr_variables
   USE uspp,           ONLY : nkb
   USE control_flags,  ONLY : gamma_only
-  USE realus,         ONLY : igk_k, npw_k, tg_psic
+  USE realus,         ONLY : tg_psic
+  USE klist,          ONLY : ngk, igk_k
   USE io_global,      ONLY : stdout
   USE charg_resp,     ONLY : w_T_beta_store, w_T_gamma_store, w_T,&
                            & w_T_zeta_store, chi, rho_1_tot, rho_1_tot_im
-  USE qpoint,         ONLY : ikks, ikqs, igkq, eigqts
-  USE eqv,            ONLY : dmuxc, evq, dpsi, dvpsi
   USE lr_exx_kernel,  ONLY : lr_exx_dealloc
-  USE phus,           ONLY : int3, int3_nc, becp1
-  use becmod,         only : bec_type, becp, deallocate_bec_type
+  USE becmod,         ONLY : bec_type, becp, deallocate_bec_type
+  USE lrus,           ONLY : int3, int3_nc, becp1, &
+                           & bbg, bbk, bbnc
+  USE qpoint,         ONLY : ikks, ikqs, eigqts
+  USE eqv,            ONLY : dmuxc, evq, dpsi, dvpsi
+  USE control_lr,     ONLY : nbnd_occ
   !
   IMPLICIT NONE
   !
@@ -44,9 +47,12 @@ SUBROUTINE lr_dealloc()
   IF (allocated(sevc1))     DEALLOCATE(sevc1)
   IF (allocated(d0psi))     DEALLOCATE(d0psi)
   IF (allocated(d0psi2))    DEALLOCATE(d0psi2)
-  if (allocated(tg_revc0))  DEALLOCATE(tg_revc0)
-  if (allocated(tg_psic))   DEALLOCATE(tg_psic)
-  if (allocated(revc0))     DEALLOCATE(revc0)
+  IF (allocated(tg_revc0))  DEALLOCATE(tg_revc0)
+  IF (allocated(tg_psic))   DEALLOCATE(tg_psic)
+  IF (allocated(revc0))     DEALLOCATE(revc0)
+  IF (allocated(bbg))       DEALLOCATE(bbg)
+  IF (allocated(bbk))       DEALLOCATE(bbk)
+  IF (allocated(bbnc))      DEALLOCATE(bbnc)
   !
   IF (project) THEN
      DEALLOCATE(F)
@@ -57,12 +63,12 @@ SUBROUTINE lr_dealloc()
   IF (allocated(rho_1c)) DEALLOCATE(rho_1c)
   IF (allocated(dmuxc))  DEALLOCATE(dmuxc)
   IF (allocated(igk_k))  DEALLOCATE(igk_k)
-  IF (allocated(npw_k))  DEALLOCATE(npw_k)
+  IF (allocated(ngk))    DEALLOCATE(ngk)
+  IF (allocated(ikks))   DEALLOCATE(ikks)
+  IF (allocated(ikqs))   DEALLOCATE(ikqs)
   !
   ! EELS-related variables
   !
-  IF (allocated(ikks))    DEALLOCATE(ikks)
-  IF (allocated(ikqs))    DEALLOCATE(ikqs)
   IF (allocated(dpsi))    DEALLOCATE(dpsi)
   IF (allocated(dvpsi))   DEALLOCATE(dvpsi)
   IF (allocated(eigqts))  DEALLOCATE(eigqts)
@@ -71,13 +77,9 @@ SUBROUTINE lr_dealloc()
   !
   IF (eels) THEN
      IF (associated(evq))    DEALLOCATE(evq)
-     IF (associated(igkq))   DEALLOCATE(igkq)
+  ELSE
+     IF (associated(evq))    NULLIFY(evq)
   ENDIF 
-  !
-  !IF (allocated(eval1)) DEALLOCATE(eval1)
-  !IF (allocated(eval2)) DEALLOCATE(eval2)
-  !IF (allocated(vl)) DEALLOCATE(vl)
-  !IF (allocated(vr)) DEALLOCATE(vr)
   !
   IF (allocated(becp1)) THEN
      DO ik = 1,size(becp1)
@@ -85,6 +87,8 @@ SUBROUTINE lr_dealloc()
      ENDDO
      DEALLOCATE(becp1)
   ENDIF
+  !
+  IF (ALLOCATED(nbnd_occ)) DEALLOCATE(nbnd_occ)
   !
   IF (allocated(alpha_store)) DEALLOCATE(alpha_store)
   IF (allocated(beta_store))  DEALLOCATE(beta_store)

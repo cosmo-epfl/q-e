@@ -18,18 +18,17 @@ SUBROUTINE data_structure( gamma_only )
   USE mp_bands,   ONLY : me_bgrp, nproc_bgrp, root_bgrp, intra_bgrp_comm, &
                          ntask_groups
   USE mp_pools,   ONLY : inter_pool_comm
-  USE fft_base,   ONLY : dfftp, dffts
+  USE fft_base,   ONLY : dfftp, dffts, dtgs
   USE cell_base,  ONLY : bg, tpiba
   USE klist,      ONLY : xk, nks
   USE gvect,      ONLY : gcutm, gvect_init
   USE gvecs,      ONLY : gcutms, gvecs_init
   USE stick_set,  ONLY : pstickset
-  USE wvfct,      ONLY : ecutwfc
+  USE gvecw,      ONLY : gcutw, gkcut
   USE io_global,  ONLY : stdout, ionode
   !
   IMPLICIT NONE
   LOGICAL, INTENT(in) :: gamma_only
-  REAL (DP) :: gkcut
   INTEGER :: ik, ngm_, ngs_, ngw_
   !
   ! ... calculate gkcut = max |k+G|^2, in (2pi/a)^2 units
@@ -49,7 +48,7 @@ SUBROUTINE data_structure( gamma_only )
         gkcut = max (gkcut, sqrt ( sum(xk (1:3, ik)**2) ) )
      ENDDO
   ENDIF
-  gkcut = (sqrt (ecutwfc) / tpiba + gkcut)**2
+  gkcut = (sqrt (gcutw) + gkcut)**2
   !
   ! ... find maximum value among all the processors
   !
@@ -59,7 +58,7 @@ SUBROUTINE data_structure( gamma_only )
   !
   CALL pstickset( gamma_only, bg, gcutm, gkcut, gcutms, &
                   dfftp, dffts, ngw_ , ngm_ , ngs_ , me_bgrp, &
-                  root_bgrp, nproc_bgrp, intra_bgrp_comm, ntask_groups, ionode, stdout )
+                  root_bgrp, nproc_bgrp, intra_bgrp_comm, ntask_groups, ionode, stdout, dtgs )
   !
   !     on output, ngm_ and ngs_ contain the local number of G-vectors
   !     for the two grids. Initialize local and global number of G-vectors

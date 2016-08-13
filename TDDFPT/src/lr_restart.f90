@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2015 Quantum ESPRESSO group
+! Copyright (C) 2001-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -8,8 +8,8 @@
 !--------------------------------------------------------------------
 SUBROUTINE lr_restart(iter_restart,rflag)
   !---------------------------------------------------------------------
-  ! ... restart the Lanczos recursion
-  !---------------------------------------------------------------------
+  !
+  ! Restart the Lanczos recursion
   !
   ! Modified by Osman Baris Malcioglu (2009)
   ! Modified by Iurii Timrov (2013)
@@ -17,33 +17,30 @@ SUBROUTINE lr_restart(iter_restart,rflag)
   USE kinds,                ONLY : DP 
   USE io_global,            ONLY : stdout, ionode_id
   USE control_flags,        ONLY : gamma_only
-  USE klist,                ONLY : nks, xk
-  USE cell_base,            ONLY : tpiba2
-  USE gvect,                ONLY : g
+  USE klist,                ONLY : nks, xk, ngk, igk_k
   USE io_files,             ONLY : tmp_dir, prefix, diropn, wfc_dir
-  USE lr_variables,         ONLY : itermax,evc1, evc1_new, sevc1_new,evc1_old, &
+  USE lr_variables,         ONLY : itermax, evc1, evc1_old, &
                                    restart, nwordrestart, iunrestart,project,nbnd_total,F, &
                                    bgz_suffix, beta_store, gamma_store, zeta_store, norm0, &
-                                   lr_verbosity, charge_response, LR_polarization, n_ipol, eels, sum_rule
+                                   lr_verbosity, charge_response, LR_polarization, n_ipol, &
+                                   eels, sum_rule
   USE charg_resp,           ONLY : resonance_condition, rho_1_tot,rho_1_tot_im
-  USE wvfct,                ONLY : npw, igk, nbnd, g2kin, npwx
+  USE wvfct,                ONLY : nbnd, npwx
   USE becmod,               ONLY : bec_type, becp, calbec
-  USE uspp,                 ONLY : vkb, nkb, okvan
+  USE uspp,                 ONLY : vkb 
   USE io_global,            ONLY : ionode
   USE mp,                   ONLY : mp_bcast
   USE mp_world,             ONLY : world_comm
-  USE realus,               ONLY : real_space, invfft_orbital_gamma, initialisation_level, &
-                                   fwfft_orbital_gamma, calbec_rs_gamma, add_vuspsir_gamma, &
-                                   v_loc_psir, s_psir_gamma,igk_k,npw_k, &
-                                   real_space_debug
   USE fft_base,             ONLY : dfftp
-  USE noncollin_module,     ONLY : nspin_mag
+  USE noncollin_module,     ONLY : nspin_mag, npol
+  USE qpoint,               ONLY : nksq
 
   IMPLICIT NONE
   !
+  INTEGER, INTENT(OUT) :: iter_restart
+  LOGICAL, INTENT(OUT) :: rflag
+  !
   CHARACTER(len=6), EXTERNAL :: int_to_char
-  INTEGER, INTENT(out) :: iter_restart
-  LOGICAL, INTENT(out) :: rflag
   !
   ! local variables
   !
@@ -65,20 +62,15 @@ SUBROUTINE lr_restart(iter_restart,rflag)
   !
   rflag = .false.
   !
-  ! Optical case: restarting kintic-energy and ultrasoft
+  ! Optical case: recompute the kintic-energy g2kin and 
+  ! beta functions vkb (needed only in the US case).
+  ! Note, this is done only in the gamma_only case,
+  ! because in the k-points version all is recomputed
+  ! on-the-fly for every k point.
   !
   IF (gamma_only) THEN
-     !
-     DO ig=1,npwx
-        !
-        g2kin(ig)=((xk(1,1)+g(1,igk_k(ig,1)))**2 &
-                 + (xk(2,1)+g(2,igk_k(ig,1)))**2 &
-                 + (xk(3,1)+g(3,igk_k(ig,1)))**2)*tpiba2
-        !
-     ENDDO
-     !
-     CALL init_us_2(npw,igk,xk(1,1),vkb)
-     !
+     CALL g2_kin(1)
+     CALL init_us_2(ngk(1),igk_k(:,1),xk(:,1),vkb)
   ENDIF
   !
   ! Reading Lanczos coefficients
@@ -189,7 +181,7 @@ SUBROUTINE lr_restart(iter_restart,rflag)
   ! Note: Restart files are always in outdir
   ! Reading Lanczos vectors
   !
-  !nwordrestart = 2 * nbnd * npwx * nks
+  nwordrestart = 2 * nbnd * npwx * npol * nksq
   !
   CALL diropn ( iunrestart, 'restart_lanczos.'//trim(int_to_char(LR_polarization)), nwordrestart, exst)
   !
@@ -202,7 +194,7 @@ SUBROUTINE lr_restart(iter_restart,rflag)
   !
   ! Optical case: read the response charge density
   !
-  IF (charge_response == 1 .and. .not. (eels )) THEN
+  IF (charge_response == 1 .and. .not.eels) THEN
      IF (resonance_condition) THEN
          CALL diropn ( iunrestart, 'restart_lanczos-rho_tot.'//trim(int_to_char(LR_polarization)), 2*dfftp%nnr*nspin_mag, exst)
         CALL davcio(rho_1_tot_im(:,:),2*dfftp%nnr*nspin_mag,iunrestart,1,-1)
@@ -216,176 +208,9 @@ SUBROUTINE lr_restart(iter_restart,rflag)
   !
   ! End of all file I/O for restart.
   !
-  ! Reinitializing sevc1_new vector
-  !
-  !IF (eels) THEN
-  !   CALL lr_recalc_sevc1_new_eels()
-  !ELSE
-  !   CALL lr_recalc_sevc1_new_optical()
-  !ENDIF
-  !
   RETURN
   !
   301 CALL errore ('restart', 'A File is corrupted, file ended unexpectedly', 1 )
   303 CALL errore ('restart', 'A File is corrupted, error in reading data', 1)
   !
-CONTAINS
-  !
-SUBROUTINE lr_recalc_sevc1_new_optical()
-  !
-  ! Optical case: 
-  ! This subroutine recalculates sevc1_new(:,:,ik,1) and sevc1_new(:,:,ik,2)
-  !
-  USE realus,         ONLY : real_space, invfft_orbital_gamma, initialisation_level, &
-                             fwfft_orbital_gamma, calbec_rs_gamma, add_vuspsir_gamma, &
-                             v_loc_psir, s_psir_gamma, real_space_debug
-  !
-  if (gamma_only) then
-     !
-     ! Calculation of sevc1_new(:,:,1,1)
-     !
-     if ( nkb > 0 .and. okvan ) then
-        !
-        if (real_space_debug>6) then
-           !
-           do ibnd=1,nbnd,2
-              !
-              call invfft_orbital_gamma(evc1_new(:,:,1,1),ibnd,nbnd)
-              call calbec_rs_gamma(ibnd,nbnd,becp%r)
-              call s_psir_gamma(ibnd,nbnd)
-              call fwfft_orbital_gamma(sevc1_new(:,:,1,1),ibnd,nbnd)
-              !
-           enddo
-           !
-        else
-           call calbec(npw_k(1),vkb,evc1_new(:,:,1,1),becp)
-           call s_psi(npwx,npw_k(1),nbnd,evc1_new(:,:,1,1),sevc1_new(:,:,1,1))
-        endif
-        !
-     else
-        !
-        ! nkb = 0, not real space
-        !
-        call s_psi(npwx,npw_k(1),nbnd,evc1_new(:,:,1,1),sevc1_new(:,:,1,1))
-        !
-     endif
-     !
-     ! Calculation of sevc1_new(:,:,1,2)
-     !
-     if ( nkb > 0 .and. okvan ) then
-        ! 
-        if (real_space_debug>6) then
-           !
-           do ibnd=1,nbnd,2
-              !
-              call invfft_orbital_gamma(evc1_new(:,:,1,2),ibnd,nbnd)
-              call calbec_rs_gamma(ibnd,nbnd,becp%r)
-              call s_psir_gamma(ibnd,nbnd)
-              call fwfft_orbital_gamma(sevc1_new(:,:,1,2),ibnd,nbnd)
-              !  
-           enddo
-           !
-        else
-           call calbec(npw_k(1),vkb,evc1_new(:,:,1,2),becp%r)
-           call s_psi(npwx,npw_k(1),nbnd,evc1_new(:,:,1,2),sevc1_new(:,:,1,2))
-        endif
-        !
-     else
-        !
-        ! nkb = 0, not real space
-        !
-        call s_psi(npwx,npw_k(1),nbnd,evc1_new(:,:,1,2),sevc1_new(:,:,1,2))
-        !
-     endif
-     !
-  else
-     !
-     ! K points case: calculation of sevc1_new(:,:,ik,1) and sevc1_new(:,:,ik,2)
-     !
-     do ik=1,nks
-        !
-        if ( nkb > 0 .and. okvan ) then
-           !
-           call init_us_2(npw_k(ik),igk_k(1,ik),xk(1,ik),vkb)
-           call calbec(npw_k(ik), vkb, evc1_new(:,:,ik,1), becp)
-           !
-        endif
-        !
-        call s_psi(npwx,npw_k(ik),nbnd,evc1_new(:,:,ik,1),sevc1_new(:,:,ik,1))
-        !
-        if (nkb > 0 .and. okvan) call calbec(npw_k(ik), vkb, evc1_new(:,:,ik,2),becp)
-        !
-        call s_psi(npwx,npw_k(ik),nbnd,evc1_new(:,:,ik,2),sevc1_new(:,:,ik,2))
-        !
-     enddo
-     !
-  end if
-  !
-  return
-  !
-END SUBROUTINE lr_recalc_sevc1_new_optical
-
-SUBROUTINE lr_recalc_sevc1_new_eels()
-    !
-    ! EELS: This subroutine recalculates sevc1_new(:,:,ik,1) and
-    ! sevc1_new(:,:,ik,2)
-    !
-    use becmod,              only : becp, calbec
-    use lr_variables,        only : lr_periodic
-    use qpoint,              only : nksq, npwq, igkq, ikks, ikqs
-    use gvect,               only : ngm, g
-    use wvfct,               only : g2kin, ecutwfc
-    use cell_base,           only : tpiba2
-    use control_ph,          only : nbnd_occ
-
-    implicit none
-    integer :: ikk, ikq
-    !
-    do ik = 1, nksq
-       !
-       if (lr_periodic) then
-          ikk = ik
-          ikq = ik
-       else
-          ikk = ikks(ik)
-          ikq = ikqs(ik)
-       endif
-       !
-       ! Determination of npwq, igkq; g2kin is used here as a workspace.
-       !
-       CALL gk_sort( xk(1,ikq), ngm, g, ( ecutwfc / tpiba2 ), npwq, igkq, g2kin)
-       !
-       if ( okvan .and. nkb > 0 ) then
-          !
-          ! Calculate beta-functions vkb at point k+q
-          !
-          call init_us_2(npwq, igkq, xk(1,ikq), vkb)
-          !
-          ! Calculate the product of beta-functions vkb with
-          ! the response orbitals evc1_new : becp%k = <vkb|evc1_new>
-          !
-          call calbec(npwq, vkb, evc1_new(:,:,ik,1), becp, nbnd_occ(ikk))
-          !
-       endif
-       !
-       call s_psi(npwx, npwq, nbnd_occ(ikk), evc1_new(:,:,ik,1), sevc1_new(:,:,ik,1))
-       !
-       if ( okvan .and. nkb > 0 ) then
-          !
-          ! Calculate the product of beta-functions vkb with
-          ! the response orbitals evc1_new : becp%k = <vkb|evc1_new>
-          !
-          call calbec(npwq, vkb, evc1_new(:,:,ik,2), becp, nbnd_occ(ikk))
-          !
-       endif
-       !
-       call s_psi(npwx, npwq, nbnd_occ(ikk), evc1_new(:,:,ik,2), sevc1_new(:,:,ik,2))
-       !
-    enddo
-    !
-    return
-    !
-END SUBROUTINE lr_recalc_sevc1_new_eels
-  !
 END SUBROUTINE lr_restart
-!-----------------------------------------------------------------------

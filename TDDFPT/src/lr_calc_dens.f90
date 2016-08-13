@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2015 Quantum ESPRESSO group
+! Copyright (C) 2001-2016 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -30,7 +30,7 @@ SUBROUTINE lr_calc_dens( evc1, response_calc )
   USE fft_interfaces,         ONLY : invfft
   USE io_global,              ONLY : stdout
   USE kinds,                  ONLY : dp
-  USE klist,                  ONLY : nks,xk,wk
+  USE klist,                  ONLY : nks, xk, wk, ngk, igk_k
   USE lr_variables,           ONLY : evc0,revc0,rho_1,lr_verbosity,&
                                      & charge_response, itermax,&
                                      & cube_save, LR_iteration,&
@@ -40,7 +40,7 @@ SUBROUTINE lr_calc_dens( evc1, response_calc )
                                      & lr_exx
   USE lsda_mod,               ONLY : current_spin, isk
   USE wavefunctions_module,   ONLY : psic
-  USE wvfct,                  ONLY : nbnd, et, wg, npwx, npw
+  USE wvfct,                  ONLY : nbnd, et, wg, npwx
   USE control_flags,          ONLY : gamma_only
   USE uspp,                   ONLY : vkb, nkb, okvan, qq, becsum
   USE uspp_param,             ONLY : upf, nh
@@ -49,7 +49,7 @@ SUBROUTINE lr_calc_dens( evc1, response_calc )
   USE mp,                     ONLY : mp_sum
   USE mp_global,              ONLY : inter_pool_comm, intra_bgrp_comm,&
                                      inter_bgrp_comm 
-  USE realus,                 ONLY : igk_k,npw_k, addusdens_r
+  USE realus,                 ONLY : addusdens_r
   USE charg_resp,             ONLY : w_T, lr_dump_rho_tot_cube,&
                                      & lr_dump_rho_tot_xyzd, &
                                      & lr_dump_rho_tot_xcrys,&
@@ -323,7 +323,6 @@ CONTAINS
     USE io_global,           ONLY : stdout
     USE realus,              ONLY : real_space, invfft_orbital_gamma,&
                                     & initialisation_level,&
-                                    & fwfft_orbital_gamma,&
                                     & calbec_rs_gamma,&
                                     & add_vuspsir_gamma, v_loc_psir,&
                                     & real_space_debug 
@@ -331,14 +330,12 @@ CONTAINS
                                     me_bgrp, me_pool
     USE mp,                  ONLY : mp_sum
     USE realus,              ONLY : tg_psic
-    USE fft_base,            ONLY : dffts
+    USE fft_base,            ONLY : dffts, dtgs
     USE fft_parallel,        ONLY : tg_gather
-    USE wvfct,               ONLY : igk
 
     IMPLICIT NONE
     !
     INTEGER :: ibnd_start_gamma, ibnd_end_gamma
-    LOGICAL :: use_tg
     INTEGER :: v_siz, incr, ioff, idx
     REAL(DP), ALLOCATABLE :: tg_rho(:)
     !
@@ -346,14 +343,13 @@ CONTAINS
     IF (MOD(ibnd_start, 2)==0) ibnd_start_gamma = ibnd_start + 1
     ibnd_end_gamma = MAX(ibnd_end, ibnd_start_gamma)
     !
-    use_tg = dffts%have_task_groups
     incr = 2
     !
-    IF ( dffts%have_task_groups ) THEN
+    IF ( dtgs%have_task_groups ) THEN
        !
-       v_siz =  dffts%tg_nnr * dffts%nogrp
+       v_siz =  dtgs%tg_nnr * dtgs%nogrp
        !
-       incr = 2 * dffts%nogrp
+       incr = 2 * dtgs%nogrp
        !
        ALLOCATE( tg_rho( v_siz ) )
        tg_rho= 0.0_DP
@@ -366,17 +362,17 @@ CONTAINS
        !
        CALL invfft_orbital_gamma(evc1(:,:,1),ibnd,nbnd)
        !
-       IF (dffts%have_task_groups) THEN
+       IF (dtgs%have_task_groups) THEN
           !
           ! Now the first proc of the group holds the first two bands
-          ! of the 2*dffts%nogrp bands that we are processing at the same time,
+          ! of the 2*dtgs%nogrp bands that we are processing at the same time,
           ! the second proc. holds the third and fourth band
           ! and so on.
           !
           ! Compute the proper factor for each band
           !
-          DO idx = 1, dffts%nogrp
-             IF( dffts%nolist( idx ) == me_bgrp ) EXIT
+          DO idx = 1, dtgs%nogrp
+             IF( dtgs%nolist( idx ) == me_bgrp ) EXIT
           ENDDO
           !
           ! Remember two bands are packed in a single array :
@@ -399,7 +395,7 @@ CONTAINS
              w2 = w1
           END IF
           !
-          DO ir = 1, dffts%tg_npp( me_bgrp + 1 ) * dffts%nr1x * dffts%nr2x
+          DO ir = 1, dtgs%tg_npp( me_bgrp + 1 ) * dffts%nr1x * dffts%nr2x
              tg_rho(ir) = tg_rho(ir) &
                   + 2.0d0*(w1*real(tg_revc0(ir,ibnd,1),dp)*real(tg_psic(ir),dp)&
                   + w2*aimag(tg_revc0(ir,ibnd,1))*aimag(tg_psic(ir)))
@@ -453,16 +449,16 @@ CONTAINS
        !
     ENDDO
     !
-    IF (dffts%have_task_groups) THEN
+    IF (dtgs%have_task_groups) THEN
        !
        ! reduce the group charge
        !
-       CALL mp_sum( tg_rho, gid = dffts%ogrp_comm )
+       CALL mp_sum( tg_rho, gid = dtgs%ogrp_comm )
        !
        ioff = 0
-       DO idx = 1, dffts%nogrp
-          IF ( me_bgrp == dffts%nolist( idx ) ) EXIT
-          ioff = ioff + dffts%nr1x * dffts%nr2x * dffts%npp( dffts%nolist( idx ) + 1 )
+       DO idx = 1, dtgs%nogrp
+          IF ( me_bgrp == dtgs%nolist( idx ) ) EXIT
+          ioff = ioff + dffts%nr1x * dffts%nr2x * dffts%npp( dtgs%nolist( idx ) + 1 )
        END DO
        !
        ! copy the charge back to the processor location
@@ -487,7 +483,7 @@ CONTAINS
        !
        IF ( real_space_debug <= 6) THEN 
           ! In real space, the value is calculated above
-          CALL calbec(npw_k(1), vkb, evc1(:,:,1), becp)
+          CALL calbec(ngk(1), vkb, evc1(:,:,1), becp)
           !
        ENDIF
        !
@@ -568,7 +564,7 @@ CONTAINS
        !
     ENDIF
     !
-    IF ( dffts%have_task_groups ) THEN
+    IF ( dtgs%have_task_groups ) THEN
        DEALLOCATE( tg_rho )
     END IF
     !   
@@ -594,7 +590,7 @@ CONTAINS
           !
           psic(:) = (0.0d0,0.0d0)
           !
-          DO ig=1,npw_k(ik)
+          DO ig = 1, ngk(ik)
              psic(nls(igk_k(ig,ik)))=evc1(ig,ibnd,ik)
           ENDDO
           !
@@ -625,7 +621,7 @@ CONTAINS
           !
           ! Calculate the beta-functions vkb
           !
-          CALL init_us_2(npw_k(ik),igk_k(1,ik),xk(1,ik),vkb)
+          CALL init_us_2(ngk(ik),igk_k(1,ik),xk(1,ik),vkb)
           !
           scal = 0.0d0
           becsum(:,:,:) = 0.0d0
@@ -633,7 +629,7 @@ CONTAINS
           ! Calculate the product of beta-functions vkb with the 
           ! wavefunctions evc1 : becp%k = <vkb|evc1>
           !
-          CALL calbec(npw_k(ik),vkb,evc1(:,:,ik),becp)
+          CALL calbec(ngk(ik),vkb,evc1(:,:,ik),becp)
           !
           CALL start_clock( 'becsum' )
           !

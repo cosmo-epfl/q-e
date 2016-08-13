@@ -13,8 +13,7 @@
 program fd_ifc
 
   use constants,  ONLY : pi, bohr_radius_angs, amu_au, amu_ry
-  use io_files,   ONLY : prefix, tmp_dir, outdir
-  use io_files,   ONLY : psfile, pseudo_dir
+  use io_files,   ONLY : prefix, tmp_dir, psfile, pseudo_dir
   use io_global,  ONLY : stdout, ionode, ionode_id
   USE mp_global,  ONLY : mp_startup,mp_global_end
   USE environment,ONLY : environment_start,environment_end
@@ -22,7 +21,8 @@ program fd_ifc
   USE cell_base,  ONLY : tpiba2, alat,omega, at, bg, ibrav, celldm
   USE ions_base,  ONLY : amass, nat, nat, atm, zv, tau, ntyp => nsp, ityp
   USE kinds,      ONLY : dp
-  USE wvfct,      ONLY : ecutwfc
+  USE gvecw,      ONLY : ecutwfc
+  USE matrix_inversion
 
   USE symm_base
   USE symme
@@ -41,6 +41,7 @@ character(len=9) :: code = 'FD_IFC'
 CHARACTER(4), ALLOCATABLE    :: atom_name(:)
 CHARACTER(50)    :: fileout, file_out, file_in, file_force, file_force3, file_rmsd
 CHARACTER(50)    :: cna,ci,cnb,cj,cnc,ck,cbx,cr,cs,ttemp,cnx
+CHARACTER(256)   :: outdir
 
 INTEGER :: na, nb, nc, i, j, k, n, ierr, idum, nrx, nrh, nbx, nr, nrr, natx, nax, ncx, ns, nave, ntemp,inn,innx
 INTEGER :: nrx1, nrx2, nrx3, nrr1, nrr2, nrr3, nr1, nr2, nr3, nbb, nr1a,nr2a,nr3a,nr1b,nr2b,nr3b, nat_0
@@ -73,7 +74,7 @@ INTEGER :: isym
 INTEGER, ALLOCATABLE  ::  sxy(:), sxz(:), syz(:)
 REAL (dp) :: ft1, ft2, ft3
 
-  REAL (dp) :: d(3,3),rd(3,3),dhex(3,3), dcub(3,3), dhexm1(3,3), da, tmp(3)
+  REAL (dp) :: d(3,3),rd(3,3),dhex(3,3), dcub(3,3), dhexm1(3,3), tmp(3)
   REAL (dp) :: accep=1.0d-5
   LOGICAL, ALLOCATABLE :: move_sl(:,:)
   LOGICAL, EXTERNAL :: eqdisp
@@ -123,7 +124,6 @@ hex=.false.
 CALL input_from_file ( )
 READ(5,input,IOSTAT=ios)
 IF (ios /= 0) CALL errore ('FD_IFC', 'reading input namelist', ABS(ios) )
-outdir=trim(outdir)
 tmp_dir = trimcheck( outdir )
 
 !reading the xml file
@@ -135,7 +135,7 @@ call read_xml_file
     write(6,*) '**************************************************'
     write(6,*) ''
     write(6,*) '    prefix=  ',trim(prefix)
-    write(6,*) '    outdir=  ',trim(outdir)
+    write(6,*) '    outdir=  ',trim(tmp_dir)
     write(6,*) '    ectuwfc= ',ecutwfc, 'Ry'
     ALLOCATE(atom_name(nat))
     ALLOCATE(taut(3,nat))
@@ -346,7 +346,7 @@ end if
 
 if (hex) then
    d=dhex
-   call invmat (3, dhex, dhexm1, da)
+   call invmat (3, dhex, dhexm1)
 else
    d=dcub
 end if

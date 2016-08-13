@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2013 Quantum ESPRESSO group
+! Copyright (C) 2001-2015 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -20,12 +20,10 @@ SUBROUTINE elphon()
   USE fft_base, ONLY : dfftp, dffts
   USE noncollin_module, ONLY : nspin_mag, noncolin, m_loc
   USE lsda_mod, ONLY : nspin
-  USE phus,       ONLY : int3, int3_nc, int3_paw
   USE uspp,  ONLY: okvan
   USE paw_variables, ONLY : okpaw
   USE el_phon,  ONLY : done_elph
   USE dynmat, ONLY : dyn, w2
-  USE qpoint, ONLY : xq
   USE modes,  ONLY : npert, nirr, u
   USE uspp_param, ONLY : nhm
   USE control_ph, ONLY : trans, xmldyn
@@ -37,6 +35,9 @@ SUBROUTINE elphon()
   USE mp_bands,  ONLY : intra_bgrp_comm, me_bgrp, root_bgrp
   USE mp,        ONLY : mp_bcast
   USE io_global, ONLY: stdout
+
+  USE lrus,   ONLY : int3, int3_nc, int3_paw
+  USE qpoint, ONLY : xq
   !
   IMPLICIT NONE
   !
@@ -44,8 +45,10 @@ SUBROUTINE elphon()
   ! counter on the representations
   ! counter on the modes
   ! the change of Vscf due to perturbations
+  INTEGER :: i,j
   COMPLEX(DP), POINTER :: dvscfin(:,:,:), dvscfins (:,:,:)
-
+  COMPLEX(DP), allocatable :: phip (:, :, :, :)
+  
   INTEGER :: ntyp_, nat_, ibrav_, nspin_mag_, mu, nu, na, nb, nta, ntb, nqs_
   REAL(DP) :: celldm_(6)
   CHARACTER(LEN=3) :: atm(ntyp)
@@ -68,15 +71,15 @@ SUBROUTINE elphon()
      npe=npert(irr)
      ALLOCATE (dvscfin (dfftp%nnr, nspin_mag , npe) )
      IF (okvan) THEN
-        ALLOCATE (int3 ( nhm, nhm, npe, nat, nspin_mag))
-        IF (okpaw) ALLOCATE (int3_paw (nhm, nhm, npe, nat, nspin_mag))
-        IF (noncolin) ALLOCATE(int3_nc( nhm, nhm, npe, nat, nspin))
+        ALLOCATE (int3 ( nhm, nhm, nat, nspin_mag, npe))
+        IF (okpaw) ALLOCATE (int3_paw (nhm, nhm, nat, nspin_mag, npe))
+        IF (noncolin) ALLOCATE(int3_nc( nhm, nhm, nat, nspin, npe))
      ENDIF
      DO ipert = 1, npe
         CALL davcio_drho ( dvscfin(1,1,ipert),  lrdrho, iudvscf, &
                            imode0 + ipert,  -1 )
         IF (okpaw .AND. me_bgrp==0) &
-             CALL davcio( int3_paw(:,:,ipert,:,:), lint3paw, &
+             CALL davcio( int3_paw(:,:,:,:,ipert), lint3paw, &
                                           iuint3paw, imode0 + ipert, - 1 )
      END DO
      IF (okpaw) CALL mp_bcast(int3_paw, root_bgrp, intra_bgrp_comm)
@@ -112,6 +115,7 @@ SUBROUTINE elphon()
         CALL readmat (iudyn, ibrav, celldm, nat, ntyp, &
                       ityp, omega, amass, tau, xq, w2, dyn)
      ELSE
+        allocate( phip(3,3,nat,nat) )
         CALL read_dyn_mat_param(fildyn, ntyp_, nat_)
         IF ( ntyp_ /= ntyp .OR. nat_ /= nat ) &
            CALL errore('elphon','uncorrect nat or ntyp',1)
@@ -124,20 +128,27 @@ SUBROUTINE elphon()
              .OR. (nspin_mag_ /= nspin_mag ) ) CALL errore ('elphon', &
              'inconsistent data', 1)
 
-        CALL read_dyn_mat(nat,1,xq,dyn)
+        CALL read_dyn_mat(nat,1,xq,phip)
         !
         !  Diagonalize the dynamical matrix
         !
-        DO mu = 1, 3*nat
-           na = (mu - 1) / 3 + 1
-           nta = ityp (na)
-           DO nu = 1, 3*nat
-              nb = (nu - 1) / 3 + 1
-              ntb = ityp (nb)
-              dyn (mu, nu) = dyn (mu, nu) / &
-                             sqrt (amass (nta)*amass (ntb)) / amu_ry
-           ENDDO
-        ENDDO
+
+        
+        DO i=1,3
+           do na=1,nat
+              nta = ityp (na)
+              mu=3*(na-1)+i
+              do j=1,3
+                 do nb=1,nat
+                   nu=3*(nb-1)+j
+                   ntb = ityp (nb)
+                   dyn (mu, nu) = phip (i, j, na, nb) / &
+                     sqrt( amass(nta)*amass(ntb))/amu_ry
+                 enddo
+              enddo
+           enddo
+        enddo
+
         !
         CALL cdiagh (3 * nat, dyn, 3 * nat, w2, dyn)
         !
@@ -151,6 +162,8 @@ SUBROUTINE elphon()
         ENDDO
 
         CALL read_dyn_mat_tail(nat)
+  
+        deallocate( phip )
      ENDIF
   ENDIF
   !
@@ -258,35 +271,37 @@ SUBROUTINE elphel (irr, npe, imode0, dvscfins)
   !      Original routine written by Francesco Mauri
   !
   USE kinds, ONLY : DP
-  USE fft_base, ONLY : dffts
+  USE fft_base, ONLY : dffts, dtgs
   USE fft_parallel, ONLY : tg_cgather
   USE wavefunctions_module,  ONLY: evc
-  USE io_files, ONLY: iunigk
   USE buffers,  ONLY : get_buffer
-  USE klist, ONLY: xk
+  USE klist, ONLY: xk, ngk, igk_k
   USE lsda_mod, ONLY: lsda, current_spin, isk
   USE noncollin_module, ONLY : noncolin, npol, nspin_mag
-  USE wvfct, ONLY: nbnd, npw, npwx, igk
+  USE wvfct, ONLY: nbnd, npwx
   USE buffers, ONLY : get_buffer
   USE uspp, ONLY : vkb
   USE el_phon, ONLY : el_ph_mat, el_ph_mat_rec, el_ph_mat_rec_col, &
                       comp_elph, done_elph
   USE modes, ONLY : u
   USE units_ph, ONLY : iubar, lrbar, lrwfc, iuwfc
-  USE eqv,      ONLY : dvpsi, evq
-  USE qpoint,   ONLY : igkq, npwq, nksq, ikks, ikqs, nksqtot
-  USE control_ph, ONLY : trans, lgamma, current_iq
+  USE control_ph, ONLY : trans, current_iq
   USE ph_restart, ONLY : ph_writefile
   USE spin_orb,   ONLY : domag
   USE mp_bands,   ONLY: intra_bgrp_comm, ntask_groups
   USE mp_pools,   ONLY: npool
   USE mp,        ONLY: mp_sum
 
+  USE eqv,        ONLY : dvpsi, evq
+  USE qpoint,     ONLY : nksq, ikks, ikqs, nksqtot
+  USE control_lr, ONLY : lgamma
+
   IMPLICIT NONE
   !
   INTEGER, INTENT(IN) :: irr, npe, imode0
   COMPLEX(DP), INTENT(IN) :: dvscfins (dffts%nnr, nspin_mag, npe)
   ! LOCAL variables
+  INTEGER :: npw, npwq
   INTEGER :: nrec, ik, ikk, ikq, ipert, mode, ibnd, jbnd, ir, ig, &
        ipol, ios, ierr
   COMPLEX(DP) , ALLOCATABLE :: aux1 (:,:), elphmat (:,:,:), tg_dv(:,:), &
@@ -295,7 +310,6 @@ SUBROUTINE elphel (irr, npe, imode0, dvscfins)
   COMPLEX(DP), EXTERNAL :: zdotc
   !
   IF (.NOT. comp_elph(irr) .OR. done_elph(irr)) RETURN
-  IF ( ntask_groups > 1 ) dffts%have_task_groups=.TRUE.
 
   ALLOCATE (aux1    (dffts%nnr, npol))
   ALLOCATE (elphmat ( nbnd , nbnd , npe))
@@ -303,39 +317,31 @@ SUBROUTINE elphel (irr, npe, imode0, dvscfins)
   el_ph_mat_rec=(0.0_DP,0.0_DP)
   ALLOCATE (aux2(npwx*npol, nbnd))
   incr=1
-  IF ( dffts%have_task_groups ) THEN
+  IF ( dtgs%have_task_groups ) THEN
      !
-     v_siz =  dffts%tg_nnr * dffts%nogrp
+     v_siz =  dtgs%tg_nnr * dtgs%nogrp
      ALLOCATE( tg_dv   ( v_siz, nspin_mag ) )
      ALLOCATE( tg_psic( v_siz, npol ) )
-     incr = dffts%nogrp
+     incr = dtgs%nogrp
      !
   ENDIF
   !
   !  Start the loops over the k-points
   !
-  IF (nksq.GT.1) REWIND (unit = iunigk)
   DO ik = 1, nksq
-     IF (nksq.GT.1) THEN
-        READ (iunigk, err = 100, iostat = ios) npw, igk
-100     CALL errore ('elphel', 'reading igk', ABS (ios) )
-     ENDIF
      !
      !  ik = counter of k-points with vector k
      !  ikk= index of k-point with vector k
      !  ikq= index of k-point with vector k+q
      !       k and k+q are alternated if q!=0, are the same if q=0
      !
-     IF (lgamma) npwq = npw
      ikk = ikks(ik)
      ikq = ikqs(ik)
      IF (lsda) current_spin = isk (ikk)
-     IF (.NOT.lgamma.AND.nksq.GT.1) THEN
-        READ (iunigk, err = 200, iostat = ios) npwq, igkq
-200     CALL errore ('elphel', 'reading igkq', ABS (ios) )
-     ENDIF
+     npw = ngk(ikk)
+     npwq= ngk(ikq)
      !
-     CALL init_us_2 (npwq, igkq, xk (1, ikq), vkb)
+     CALL init_us_2 (npwq, igk_k(1,ikq), xk (1, ikq), vkb)
      !
      ! read unperturbed wavefuctions psi(k) and psi(k+q)
      !
@@ -363,35 +369,33 @@ SUBROUTINE elphel (irr, npe, imode0, dvscfins)
         !
         ! calculate dvscf_q*psi_k
         !
-        IF ( ntask_groups > 1 ) dffts%have_task_groups=.TRUE.
-        IF ( dffts%have_task_groups ) THEN
+        IF ( dtgs%have_task_groups ) THEN
            IF (noncolin) THEN
-              CALL tg_cgather( dffts, dvscfins(:,1,ipert), tg_dv(:,1))
+              CALL tg_cgather( dffts, dtgs, dvscfins(:,1,ipert), tg_dv(:,1))
               IF (domag) THEN
                  DO ipol=2,4
-                    CALL tg_cgather( dffts, dvscfins(:,ipol,ipert), &
+                    CALL tg_cgather( dffts, dtgs, dvscfins(:,ipol,ipert), &
                                                           tg_dv(:,ipol))
                  ENDDO
               ENDIF
            ELSE
-              CALL tg_cgather( dffts, dvscfins(:,current_spin,ipert), &
+              CALL tg_cgather( dffts, dtgs, dvscfins(:,current_spin,ipert), &
                                                             tg_dv(:,1))
            ENDIF
         ENDIF
         aux2=(0.0_DP,0.0_DP)
         DO ibnd = 1, nbnd, incr
-           IF ( dffts%have_task_groups ) THEN
-              CALL cft_wave_tg (evc, tg_psic, 1, v_siz, ibnd, nbnd )
+           IF ( dtgs%have_task_groups ) THEN
+              CALL cft_wave_tg (ik, evc, tg_psic, 1, v_siz, ibnd, nbnd )
               CALL apply_dpot(v_siz, tg_psic, tg_dv, 1)
-              CALL cft_wave_tg (aux2, tg_psic, -1, v_siz, ibnd, nbnd)
+              CALL cft_wave_tg (ik, aux2, tg_psic, -1, v_siz, ibnd, nbnd)
            ELSE
-              CALL cft_wave (evc(1, ibnd), aux1, +1)
+              CALL cft_wave (ik, evc(1, ibnd), aux1, +1)
               CALL apply_dpot(dffts%nnr, aux1, dvscfins(1,1,ipert), current_spin)
-              CALL cft_wave (aux2(1, ibnd), aux1, -1)
+              CALL cft_wave (ik, aux2(1, ibnd), aux1, -1)
            ENDIF
         ENDDO
         dvpsi=dvpsi+aux2
-        dffts%have_task_groups=.FALSE.
 
         CALL adddvscf (ipert, ik)
         !
@@ -436,12 +440,10 @@ SUBROUTINE elphel (irr, npe, imode0, dvscfins)
   DEALLOCATE (elphmat)
   DEALLOCATE (aux1)
   DEALLOCATE (aux2)
-  IF ( ntask_groups > 1) dffts%have_task_groups=.TRUE.
-  IF ( dffts%have_task_groups ) THEN
+  IF ( dtgs%have_task_groups ) THEN
      DEALLOCATE( tg_dv )
      DEALLOCATE( tg_psic )
   ENDIF
-  dffts%have_task_groups=.FALSE.
   !
   RETURN
 END SUBROUTINE elphel
@@ -467,17 +469,20 @@ SUBROUTINE elphsum ( )
   USE parameters,  ONLY : npk
   USE el_phon,     ONLY : el_ph_mat, done_elph, el_ph_nsigma, el_ph_ngauss, &
                           el_ph_sigma
-  USE qpoint,      ONLY : xq, nksq
-  USE modes,       ONLY : u, minus_q, nsymq, rtau, nirr
+  USE modes,       ONLY : u, nirr
   USE dynmat,      ONLY : dyn, w2
   USE io_global,   ONLY : stdout, ionode, ionode_id
   USE xml_io_base, ONLY : create_directory
   USE mp_pools,    ONLY : my_pool_id, npool, kunit
   USE mp_images,   ONLY : intra_image_comm
   USE mp,          ONLY : mp_bcast
-  USE control_ph,  ONLY : lgamma, tmp_dir_phq, xmldyn, current_iq
+  USE control_ph,  ONLY : tmp_dir_phq, xmldyn, current_iq
   USE save_ph,     ONLY : tmp_dir_save
   USE io_files,    ONLY : prefix, tmp_dir, seqopn
+  
+  USE lr_symm_base, ONLY : minus_q, nsymq, rtau
+  USE qpoint,       ONLY : xq, nksq
+  USE control_lr,   ONLY : lgamma
   !
   IMPLICIT NONE
   ! epsw = 20 cm^-1, in Ry
@@ -524,7 +529,7 @@ SUBROUTINE elphsum ( )
   COMPLEX(DP) :: el_ph_sum (3*nat,3*nat)
 
   COMPLEX(DP), POINTER :: el_ph_mat_collect(:,:,:,:)
-  REAL(DP), ALLOCATABLE :: xk_collect(:,:), wk_collect(:)
+  REAL(DP), ALLOCATABLE :: xk_collect(:,:)
   REAL(DP), POINTER :: wkfit_dist(:), etfit_dist(:,:)
   INTEGER :: nksfit_dist, rest, kunit_save
   INTEGER :: nks_real, ispin, nksqtot, irr
@@ -548,7 +553,6 @@ SUBROUTINE elphsum ( )
   nsig =el_ph_nsigma
 
   ALLOCATE(xk_collect(3,nkstot))
-  ALLOCATE(wk_collect(nkstot))
 
   ALLOCATE(deg(nsig))
   ALLOCATE(effit(nsig))
@@ -560,7 +564,6 @@ SUBROUTINE elphsum ( )
 !
      nksqtot=nksq
      xk_collect(:,1:nks) = xk(:,1:nks)
-     wk_collect(1:nks) = wk(1:nks)
      el_ph_mat_collect => el_ph_mat
   ELSE  
 !
@@ -573,12 +576,13 @@ SUBROUTINE elphsum ( )
         nksqtot=nkstot/2
      ENDIF
      ALLOCATE(el_ph_mat_collect(nbnd,nbnd,nksqtot,3*nat))
-     CALL xk_wk_collect(xk_collect,wk_collect,xk,wk,nkstot,nks)
+  ! FIXME: these two routines should be replaced by a generic routine
+     CALL xk_wk_collect(xk_collect,xk,nkstot,nks)
      CALL el_ph_collect(3*nat,el_ph_mat,el_ph_mat_collect,nksqtot,nksq)
   ENDIF
   !
   ! read eigenvalues for the dense grid
-  ! FIXME: this might be done from the xml file, not from a specialized file
+  ! FIXME: this should be done from the xml file, not from a specialized file
   ! parallel case: only first node reads
   !
   IF ( ionode ) THEN
@@ -899,7 +903,6 @@ SUBROUTINE elphsum ( )
   DEALLOCATE( effit )
   DEALLOCATE( dosfit )
   DEALLOCATE(xk_collect)
-  DEALLOCATE(wk_collect)
   IF (npool /= 1) DEALLOCATE(el_ph_mat_collect)
 
   !
@@ -930,15 +933,17 @@ SUBROUTINE elphsum_simple
   USE el_phon, ONLY : el_ph_mat, el_ph_nsigma, el_ph_ngauss, el_ph_sigma
   USE mp_pools,  ONLY : inter_pool_comm, npool
   USE mp_images, ONLY : intra_image_comm
-  USE qpoint, ONLY : xq, nksq, ikks, ikqs
   USE output, ONLY : fildyn
   USE dynmat, ONLY : dyn, w2
-  USE modes, ONLY : u, rtau, nsymq, irotmq, minus_q, nirr
+  USE modes, ONLY : u, nirr
   USE control_ph, only : current_iq, qplot
   USE lsda_mod, only : isk
   USE el_phon,   ONLY : done_elph, gamma_disp
   USE io_global, ONLY : stdout, ionode, ionode_id
   USE mp,        ONLY: mp_sum, mp_bcast
+
+  USE lr_symm_base, ONLY : rtau, nsymq, irotmq, minus_q
+  USE qpoint, ONLY : xq, nksq, ikks, ikqs
   !
   IMPLICIT NONE
   REAL(DP), PARAMETER :: eps = 20_dp/ry_to_cmm1 ! eps = 20 cm^-1, in Ry

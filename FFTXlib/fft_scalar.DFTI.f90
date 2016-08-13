@@ -140,7 +140,7 @@
      END SUBROUTINE check_dims
 
      SUBROUTINE lookup()
-     IF( dfti_first .EQ. .TRUE. ) THEN
+     IF( dfti_first ) THEN
         DO ip = 1, ndims
            hand(ip)%desc => NULL()
         END DO
@@ -321,7 +321,7 @@
      END SUBROUTINE check_dims
 
      SUBROUTINE lookup()
-     IF( dfti_first .EQ. .TRUE. ) THEN
+     IF( dfti_first ) THEN
         DO ip = 1, ndims
            hand(ip)%desc => NULL()
         END DO
@@ -486,7 +486,7 @@
      END SUBROUTINE check_dims
 
      SUBROUTINE lookup()
-     IF( dfti_first .EQ. .TRUE. ) THEN
+     IF( dfti_first ) THEN
         DO ip = 1, ndims
            hand(ip)%desc => NULL()
         END DO
@@ -567,14 +567,14 @@
 !=----------------------------------------------------------------------=!
 !
 
-SUBROUTINE cfft3ds (f, nx, ny, nz, ldx, ldy, ldz, isign, do_fft_x, do_fft_y)
+SUBROUTINE cfft3ds (f, nx, ny, nz, ldx, ldy, ldz, isign, do_fft_z, do_fft_y)
   !
   implicit none
 
   integer :: nx, ny, nz, ldx, ldy, ldz, isign
   !
   complex(DP) :: f ( ldx * ldy * ldz )
-  integer :: do_fft_x(:), do_fft_y(:)
+  integer :: do_fft_y(:), do_fft_z(:)
   !
   CALL cfft3d (f, nx, ny, nz, ldx, ldy, ldz, isign)
 
