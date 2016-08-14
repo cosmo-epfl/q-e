@@ -368,6 +368,15 @@ dqvan2.o : ../../Modules/uspp.o
 dqvan2.o : pwcom.o
 drhoc.o : ../../Modules/constants.o
 drhoc.o : ../../Modules/kind.o
+driver.o : ../../Modules/io_global.o
+driver.o : ../../Modules/io_files.o
+driver.o : ../../Modules/mp_global.o
+driver.o : ../../Modules/control_flags.o
+driver.o : ../../Modules/ions_base.o
+driver.o : ../../Modules/cell_base.o
+driver.o : pwcom.o
+driver.o : fsockets.o
+driver.o : update_pot.o
 dvloc_of_g.o : ../../Modules/constants.o
 dvloc_of_g.o : ../../Modules/kind.o
 dynamics_module.o : ../../Modules/basic_algebra_routines.o
@@ -614,6 +623,7 @@ forces_bp_efield.o : ../../Modules/wavefunctions.o
 forces_bp_efield.o : bp_mod.o
 forces_bp_efield.o : buffers.o
 forces_bp_efield.o : pwcom.o
+fsockets.o : sockets.o
 g2_kin.o : ../../Modules/cell_base.o
 g2_kin.o : ../../Modules/gvecw.o
 g2_kin.o : ../../Modules/kind.o

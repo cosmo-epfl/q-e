@@ -96,10 +96,10 @@ MODULE input_parameters
         CHARACTER(len=80) :: calculation = 'none'
           ! Specify the type of the simulation
           ! See below for allowed values
-        CHARACTER(len=80) :: calculation_allowed(14)
+        CHARACTER(len=80) :: calculation_allowed(15)
         DATA calculation_allowed / 'scf', 'nscf', 'relax', 'md', 'cp', &
           'vc-relax', 'vc-md', 'vc-cp', 'bands', 'neb', 'smd', 'cp-wf', &
-          'vc-cp-wf', 'cp-wf-nscf'/
+          'vc-cp-wf', 'cp-wf-nscf', 'driver'/
         CHARACTER(len=80) :: verbosity = 'default'
           ! define the verbosity of the code output
         CHARACTER(len=80) :: verbosity_allowed(6)
@@ -152,7 +152,19 @@ MODULE input_parameters
         CHARACTER(len=256) :: prefix = 'prefix'
           ! specify the prefix for the output file, if not specified the
           ! files are opened as standard fortran units.
+        
+        CHARACTER(len=1024) :: srvaddress = 'localhost:31415'
+          ! specify the hostname:port of the socket opened on the server side
+          ! to run in driver mode.
 
+        REAL(DP) :: gvec_ang_tol = 5.0E-1_DP
+        REAL(DP) :: gvec_dist_tol = 5.0E-1_DP
+        REAL(DP) :: gvec_omega_tol = 5.0E-1_DP
+          ! specify the fractional tolerances above which the g-vectors are
+          ! reinitialized when calculation = driver. Respectively for the
+          ! lattice angle, lattice lenght and lattice volume.
+         
+        
         CHARACTER(len=256) :: pseudo_dir = './'
           ! specify the directory containing the pseudopotentials
 
@@ -276,7 +288,8 @@ MODULE input_parameters
           gdir, nppstr, wf_collect, lelfield, nberrycyc, refg,            &
           tefield2, saverho, tabps, lkpoint_dir, use_wannier, lecrpa,     &
           tqmmm, vdw_table_name, lorbm, memory, point_label_type,         &
-          lfcpopt, lfcpdyn, input_xml_schema_file                                                  
+          lfcpopt, lfcpdyn, input_xml_schema_file, srvaddress,            &
+          gvec_ang_tol, gvec_dist_tol, gvec_omega_tol        
 !
 !=----------------------------------------------------------------------------=!
 !  SYSTEM Namelist Input Parameters

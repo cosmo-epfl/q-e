@@ -66,6 +66,9 @@ divide.o \
 divide_et_impera.o \
 dqvan2.o \
 drhoc.o \
+fsockets.o \
+driver.o \
+sockets.o \
 dvloc_of_g.o \
 dynamics_module.o \
 efermig.o \

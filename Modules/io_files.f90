@@ -22,6 +22,8 @@ MODULE io_files
   CHARACTER(len=256) :: wfc_dir = 'undefined'
   ! ... prefix is prepended to all file (and directory) names 
   CHARACTER(len=256) :: prefix  = 'os'
+  ! address of the server for driver mode
+  CHARACTER(len=1024) :: srvaddress = 'localhost:31415'
   ! ... for parallel case and distributed I/O: node number
   CHARACTER(len=6)   :: nd_nmbr = '000000'
   ! ... directory where pseudopotential files are found
@@ -292,7 +294,6 @@ subroutine seqopn (unit, extension, formatt, exst, tmp_dir_)
   logical :: opnd
   ! true if the file is already opened
 
-
   if (unit < 1) call errore ('seqopn', 'wrong unit', 1)
   !
   !    test if the file is already opened
@@ -327,6 +328,7 @@ subroutine seqopn (unit, extension, formatt, exst, tmp_dir_)
   !
   !    Open the file
   !
+  
   open (unit = unit, file = tempfile, form = formatt, status = &
        'unknown', iostat = ios)
 
