@@ -93,7 +93,6 @@
             CALL clean_pw(.FALSE.)
             if(.not.firststep) CALL close_files(.TRUE.)
             firststep = .false.
-             ! CALL seqopn(iunupdate, 'update', 'FORMATTED', exst, delete=.true.)
           endif
 
           if (ionode) write(*,*) " @ DRIVER MODE: Receiving replica", nat, replicaid
@@ -125,18 +124,16 @@
          call mp_bcast(cellh,ionode_id, intra_image_comm)  ! must communicate to other nodes
          call mp_bcast(cellih,ionode_id, intra_image_comm)
          call mp_bcast(nat,ionode_id, intra_image_comm)
-         if (.not.allocated(combuf)) then
-           allocate(combuf(3*nat))
-!           allocate(tauhist(3,nat,3) )
-!           tauhist=0.d0
-         end if
+         IF (.not.allocated(combuf)) THEN
+           ALLOCATE(combuf(3*nat))
+         END IF
          if (ionode) call readbuffer(socket, combuf, nat*3)
          call mp_bcast(combuf,ionode_id, intra_image_comm)
 
-         if( .not.firststep ) then
+         IF( .not.firststep ) then
             at_old = at
             omega_old = omega
-         end if
+         END IF
                   
          ! convert the incoming configuration to the internal pwscf format
          cellh=transpose(cellh)                       ! row-major to column-major 
@@ -144,7 +141,7 @@
          tau = RESHAPE(combuf, (/ 3 , nat /) )/alat   ! internally positions are in alat 
          at = cellh / alat                            ! and so the cell
                   
-         if (ionode) write(*,*) " @ DRIVER MODE: Received positions "
+         IF (ionode) WRITE(*,*) " @ DRIVER MODE: Received positions "
          
          CALL recips( at(1,1),at(1,2),at(1,3), bg(1,1),bg(1,2),bg(1,3) )
          CALL volume( alat, at(1,1), at(1,2), at(1,3), omega )
@@ -158,21 +155,16 @@
          IF (firststep .or. ( lmovecell .and. lgreset )) THEN
             ! changes needed only if cell moves
 
-            if (ionode) write(*,*) " @ DRIVER MODE: reinitialize G-vectors "
+            IF (ionode) write(*,*) " @ DRIVER MODE: reinitialize G-vectors "
             
             at_reset = at
             omega_reset = omega
             dist_ang_reset = dist_ang
-         
-            ! dfftp%nr1=0; dfftp%nr2=0; dfftp%nr3=0; dffts%nr1=0; dffts%nr2=0; dffts%nr3=0
-            
-            if(firststep) CALL setup()
-!            CALL realspace_grids_init (dfftp, dffts,at, bg, gcutm, gcutms )
-            ! CALL checkallsym( nat, tau, ityp, dfftp%nr1, dfftp%nr2, dfftp%nr3 )
-            ! if(ionode) CALL system("rm -rf dia*")
+                     
+            IF (firststep) CALL setup()
             
             CALL clean_pw(.FALSE.)
-            if(.not.firststep) CALL close_files(.TRUE.)
+            IF (.not.firststep) CALL close_files(.TRUE.)
             firststep = .false.
             
             CALL init_run()
@@ -188,16 +180,8 @@
             CALL hinit1()
          END IF
 
-         
-         ! do run initialisation here, so it is done with the positions sent from i-PI
-         ! if (firststep) then
-         !    if (ionode) write(*,*) " @ DRIVER MODE: Preparing first evaluation "
-         !    call init_run()
-         !    firststep=.false.
-         ! end if 
-
+                  
          ! Compute everything !
-!         CALL hinit1()
          CALL electrons()
          IF ( .NOT. conv_elec ) THEN
            CALL punch( 'all' )
@@ -205,28 +189,16 @@
          ENDIF         
          CALL forces()
          CALL stress(sigma)
-         !!!!!!!11!!!!!!!!!!!!
          
          ! converts energy & forces to the format expected by i-pi (so go from Ry to Ha)
          combuf=RESHAPE(force, (/ 3 * nat /) ) * 0.5   ! return force in atomic units    
-         pot=etot * 0.5   ! return potential in atomic units
-         vir=transpose(sigma)*omega*0.5   ! return virial in atomic units and without the volume scaling         
+         pot=etot * 0.5                                ! return potential in atomic units
+         vir=transpose(sigma)*omega*0.5                ! return virial in atomic units and without the volume scaling         
 
          ! updates history
          istep = istep+1
-         ! history = history+1
-         ! tauhist(:,:,3) = tauhist(:,:,2)
-         ! tauhist(:,:,2) = tauhist(:,:,1)
-         ! tauhist(:,:,1) = tau(:,:)
          CALL update_file()
-         
-         ! if (ionode) then
-         !   CALL seqopn( iunupdate, 'update', 'FORMATTED', exst )
-         !   WRITE( UNIT = iunupdate, FMT = * ) history
-         !   WRITE( UNIT = iunupdate, FMT = * ) tauhist
-         !   CLOSE( UNIT = iunupdate, STATUS = 'KEEP' )
-         ! endif
-                
+                         
          hasdata=.true.
       else if (trim(header)=="GETFORCE") then
          ! communicates energy info back to i-pi

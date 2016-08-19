@@ -27,7 +27,7 @@ PROGRAM pwscf
   !
   ! ... Perform actual calculation
   !
-  CALL run_pwscf  ( exit_status )
+  CALL run_pwscf( exit_status )
   !
   CALL stop_run( exit_status )
   CALL do_stop( exit_status )
