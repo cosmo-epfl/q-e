@@ -31,7 +31,6 @@ SUBROUTINE run_pwscf ( exit_status )
   USE cell_base,        ONLY : fix_volume, fix_area
   USE control_flags,    ONLY : conv_elec, gamma_only, ethr, lscf, twfcollect
   USE control_flags,    ONLY : conv_ions, istep, nstep, restart, lmd, lbfgs
-  USE control_flags,    ONLY : ldriver
   USE force_mod,        ONLY : lforce, lstres, sigma, force
   USE check_stop,       ONLY : check_stop_init, check_stop_now
   USE mp_images,        ONLY : intra_image_comm
@@ -76,11 +75,6 @@ SUBROUTINE run_pwscf ( exit_status )
   !
   CALL check_stop_init()
   !
-  if (ldriver) THEN 
-    CALL driver()
-    GOTO 111
-  end if
-  !  
   CALL setup ()
   !
   CALL qmmm_update_positions()
@@ -216,7 +210,7 @@ SUBROUTINE run_pwscf ( exit_status )
 #ifdef __XSD
   CALL qexsd_set_status(exit_status)
 #endif
-111  CALL punch('all')
+  CALL punch('all')
   !
   CALL qmmm_shutdown()
   !

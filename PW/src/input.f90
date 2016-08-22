@@ -80,8 +80,7 @@ SUBROUTINE iosys()
   USE io_files,      ONLY : input_drho, output_drho, &
                             psfile, tmp_dir, wfc_dir, &
                             prefix_     => prefix, &
-                            pseudo_dir_ => pseudo_dir, &
-                            srvaddress_ => srvaddress
+                            pseudo_dir_ => pseudo_dir
   !
   USE force_mod,     ONLY : lforce, lstres, force
   !
@@ -152,14 +151,10 @@ SUBROUTINE iosys()
                             tbeta_smoothing_  => tbeta_smoothing, &
                             io_level, ethr, lscf, lbfgs, lmd, &
                             lbands, lconstrain, restart, twfcollect, &
-                            llondon, do_makov_payne, lxdm, ldriver, &
+                            llondon, do_makov_payne, lxdm, &
                             ts_vdw_           => ts_vdw, &
                             lecrpa_           => lecrpa, &
-                            smallmem, &
-                            gvec_omega_tol_ => gvec_omega_tol, &
-                            gvec_ang_tol_ => gvec_ang_tol, &
-                            gvec_dist_tol_ => gvec_dist_tol
-  
+                            smallmem
   USE control_flags, ONLY: scf_must_converge_ => scf_must_converge
   !
   USE wvfct,         ONLY : nbnd_ => nbnd
@@ -199,7 +194,7 @@ SUBROUTINE iosys()
   USE realus,                ONLY : real_space_ => real_space
 
   USE read_pseudo_mod,       ONLY : readpp
-  
+
   USE qmmm, ONLY : qmmm_config
 
   !
@@ -211,11 +206,8 @@ SUBROUTINE iosys()
                                pseudo_dir, disk_io, tefield, dipfield, lberry, &
                                gdir, nppstr, wf_collect,lelfield,lorbm,efield, &
                                nberrycyc, lkpoint_dir, efield_cart, lecrpa,    &
-                               vdw_table_name, memory, tqmmm, srvaddress,      &
-                               efield_phase, gvec_ang_tol, gvec_dist_tol,      &
-                               gvec_omega_tol
-
-
+                               vdw_table_name, memory, tqmmm,                  &
+                               efield_phase
 
   !
   ! ... SYSTEM namelist
@@ -402,16 +394,6 @@ SUBROUTINE iosys()
                    & ' not supported', 1 )
      END SELECT
      !
-  CASE( 'driver' )
-     !
-     lscf      = .true.
-     ldriver   = .true.
-     lforce    = .true.
-     lstres    = .true.
-     lmd       = .true.
-     lmovecell = .true.
-     !
-
   CASE( 'vc-relax' )
      !
      lscf      = .true.
@@ -499,7 +481,7 @@ SUBROUTINE iosys()
      !
   END SELECT
   !
-  lstres = ldriver .or. lmovecell .OR. ( tstress .and. lscf )
+  lstres = lmovecell .OR. ( tstress .and. lscf )
   !
   IF ( tefield .and. ( .not. nosym ) ) THEN
      nosym = .true.
@@ -1114,14 +1096,10 @@ SUBROUTINE iosys()
   dipfield_   = dipfield
   prefix_     = trim( prefix )
   pseudo_dir_ = trimcheck( pseudo_dir )
-  srvaddress_ = trim(srvaddress)
   nstep_      = nstep
   iprint_     = iprint
   lecrpa_     = lecrpa
   scf_must_converge_ = scf_must_converge
-  gvec_omega_tol_ = gvec_omega_tol
-  gvec_dist_tol_ = gvec_dist_tol
-  gvec_ang_tol_ = gvec_ang_tol
   !
   nat_     = nat
   ntyp_    = ntyp

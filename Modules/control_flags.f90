@@ -139,11 +139,7 @@ MODULE control_flags
   REAL(DP), PUBLIC :: &
        ekin_conv_thr = 0.0_DP, &!  conv. threshold for fictitious e. kinetic energy
        etot_conv_thr = 0.0_DP, &!  conv. threshold for DFT energy
-       forc_conv_thr = 0.0_DP, &!  conv. threshold for atomic forces
-       gvec_omega_tol = 0.0_DP,&
-       gvec_dist_tol = 0.0_DP, &
-       gvec_ang_tol = 0.0_DP
-  
+       forc_conv_thr = 0.0_DP   !  conv. threshold for atomic forces
   INTEGER, PUBLIC :: &
        ekin_maxiter = 100,   &!  max number of iter. for ekin convergence
        etot_maxiter = 100,   &!  max number of iter. for etot convergence
@@ -157,7 +153,6 @@ MODULE control_flags
     lscf    =.FALSE., &! if .TRUE. the calc. is selfconsistent
     lbfgs   =.FALSE., &! if .TRUE. the calc. is a relaxation based on BFGS
     lmd     =.FALSE., &! if .TRUE. the calc. is a dynamics
-    ldriver =.FALSE., &! if .TRUE. run in driver mode
     lwf     =.FALSE., &! if .TRUE. the calc. is with wannier functions
     !=================================================================
     !exx_wf related 

@@ -7,7 +7,7 @@
     
     USE ions_base,              ONLY : tau, ityp
     USE cell_base,              ONLY : alat, at, omega, bg
-    USE cellmd,                 ONLY : omega_old, at_old, lmovecell, calc
+    USE cellmd,                 ONLY : omega_old, at_old, calc
     USE force_mod,              ONLY : force
     USE ener,                   ONLY : etot
     USE f90sockets,             ONLY : open_socket, readbuffer, writebuffer
@@ -21,16 +21,15 @@
     IMPLICIT NONE
     
     INTEGER, PARAMETER :: MSGLEN=12
-    LOGICAL :: isinit=.false., hasdata=.false., firststep=.true., exst, lgreset
+    LOGICAL :: isinit=.false., hasdata=.false., firststep=.true., lgreset
     CHARACTER*12 :: header
     CHARACTER*1024 :: parbuffer, host
     INTEGER :: socket, nat, inet, port, ccmd, i, info, replicaid=-1
-    REAL*8 :: sigma(3,3), omega_reset, at_reset(3,3), dist_reset, ang_reset
+    REAL*8 :: sigma(3,3), omega_reset
     REAL *8 :: cellh(3,3), cellih(3,3), vir(3,3), pot, mtxbuffer(9)
-    REAL*8, ALLOCATABLE :: combuf(:)!, tauhist(:,:,:)
+    REAL*8, ALLOCATABLE :: combuf(:)
     REAL*8 :: dist_ang(6), dist_ang_reset(6)
 
-    lmovecell = .true.
     omega_reset = .0
     dist_ang_reset = .0
     omega_old = .0
@@ -77,13 +76,6 @@
 
           ! Here nat is the replicaid
           if (nat.ne.replicaid .and. .not. firststep) then
-             ! history = 1 ! resets history -- want to do new-old propagation if replica changed
-             ! if (ionode) then !Those files are used for extraplolation
-             !    CALL seqopn( iunupdate, 'update', 'FORMATTED', exst )
-             !    WRITE( UNIT = iunupdate, FMT = * ) history
-             !    WRITE( UNIT = iunupdate, FMT = * ) tauhist
-             !    CLOSE( UNIT = iunupdate, STATUS = 'KEEP' )
-             ! endif
              ! new way of resetting history (check if something better exists).
             if(firststep) CALL setup()
 !            CALL realspace_grids_init (dfftp, dffts,at, bg, gcutm, gcutms )
@@ -152,12 +144,11 @@
               & (any(abs(dist_ang(4:6) - dist_ang_reset(4:6)) .gt. gvec_ang_tol)))
 
          ! refresh the cell stuff
-         IF (firststep .or. ( lmovecell .and. lgreset )) THEN
+         IF (firststep .or. lgreset ) THEN
             ! changes needed only if cell moves
 
             IF (ionode) write(*,*) " @ DRIVER MODE: reinitialize G-vectors "
             
-            at_reset = at
             omega_reset = omega
             dist_ang_reset = dist_ang
                      
