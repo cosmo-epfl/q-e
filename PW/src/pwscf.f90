@@ -15,7 +15,6 @@ PROGRAM pwscf
   USE mp_global,         ONLY : mp_startup
   USE read_input,        ONLY : read_input_file
   USE command_line_options, ONLY: input_file_, command_line
-  USE driver,            ONLY : run_driver
   !
   IMPLICIT NONE
   CHARACTER(len=256) :: srvaddress, get_server_address
@@ -70,7 +69,7 @@ FUNCTION get_server_address ( command_line ) RESULT ( srvaddress )
   narg = 0
 10 CONTINUE
   CALL my_getarg ( command_line, narg, arg )
-  IF ( TRIM (arg) == '-ipi_address' .OR. TRIM (arg) == '--ipi_address' ) THEN
+  IF ( TRIM (arg) == '-ipi' .OR. TRIM (arg) == '--ipi' ) THEN
      IF ( srvaddress == ' ' ) THEN
         narg = narg + 1
         IF ( narg > nargs ) THEN

@@ -6,7 +6,7 @@
 ! or http://www.gnu.org/copyleft/gpl.txt .
 !
 !----------------------------------------------------------------------------
-MODULE driver
+SUBROUTINE run_driver ( srvaddress, exit_status ) 
   USE io_global,        ONLY : stdout, ionode, ionode_id
   USE parameters,       ONLY : ntypx, npk, lmaxx
   USE check_stop,       ONLY : check_stop_init
@@ -33,8 +33,9 @@ MODULE driver
 #ifdef __XSD
   USE qexsd_module,     ONLY:   qexsd_set_status
 #endif
-  !
   IMPLICIT NONE
+  INTEGER, INTENT(OUT) :: exit_status
+  CHARACTER(*), INTENT(IN) :: srvaddress
   INTEGER, PARAMETER :: MSGLEN=12
   REAL*8, PARAMETER :: gvec_ang_tol  = 1.0D-1, &
                        gvec_dist_tol = 1.0D-1, &
@@ -47,118 +48,122 @@ MODULE driver
   REAL *8 :: cellh(3,3), cellih(3,3), vir(3,3), pot, mtxbuffer(9)
   REAL*8, ALLOCATABLE :: combuf(:)
   REAL*8 :: dist_ang(6), dist_ang_reset(6)
+  !----------------------------------------------------------------------------
   !
-CONTAINS
+  ! ... Run an instance of the Plane Wave Self-Consistent Field code 
+  ! ... MPI initialization and input data reading is performed in the 
+  ! ... calling code - returns in exit_status the exit code for pw.x, 
+  ! ... returned in the shell. Values are:
+  ! ... * 0: completed successfully
+  ! ... * 1: an error has occurred (value returned by the errore() routine)
+  ! ... * 2-127: convergence error
+  ! ...   * 2: scf convergence error
+  ! ...   * 3: ion convergence error
+  ! ... * 128-255: code exited due to specific trigger
+  !       * 255: exit due to user request, or signal trapped,
+  !              or time > max_seconds
+  ! ...     (note: in the future, check_stop_now could also return a value
+  ! ...     to specify the reason of exiting, and the value could be used
+  ! ..      to return a different value for different reasons)
+  ! ... Will be eventually merged with NEB
   !
-  SUBROUTINE run_driver ( srvaddress, exit_status ) 
-    IMPLICIT NONE
-    INTEGER, INTENT(OUT) :: exit_status
-    CHARACTER(*), INTENT(IN) :: srvaddress
-    !----------------------------------------------------------------------------
-    !
-    ! ... Run an instance of the Plane Wave Self-Consistent Field code 
-    ! ... MPI initialization and input data reading is performed in the 
-    ! ... calling code - returns in exit_status the exit code for pw.x, 
-    ! ... returned in the shell. Values are:
-    ! ... * 0: completed successfully
-    ! ... * 1: an error has occurred (value returned by the errore() routine)
-    ! ... * 2-127: convergence error
-    ! ...   * 2: scf convergence error
-    ! ...   * 3: ion convergence error
-    ! ... * 128-255: code exited due to specific trigger
-    !       * 255: exit due to user request, or signal trapped,
-    !              or time > max_seconds
-    ! ...     (note: in the future, check_stop_now could also return a value
-    ! ...     to specify the reason of exiting, and the value could be used
-    ! ..      to return a different value for different reasons)
-    ! ... Will be eventually merged with NEB
-    !
-    !
-    omega_reset = .0
-    dist_ang_reset = .0
-    omega_old = .0
-    at_old = .0
-    !
-    lscf      = .true.
-    lforce    = .true.
-    lstres    = .true.
-    lmd       = .true.
-    lmovecell = .true.
-    !
-    exit_status = 0
-    IF ( ionode ) WRITE( unit = stdout, FMT = 9010 ) ntypx, npk, lmaxx
-    !
-    IF (ionode) CALL plugin_arguments()
-    CALL plugin_arguments_bcast( ionode_id, intra_image_comm )
-    !
-    ! ... needs to come before iosys() so some input flags can be
-    !     overridden without needing to write PWscf specific code.
-    !
-    ! ... convert to internal variables
-    !
-    CALL iosys()
-    !
-    IF ( gamma_only ) WRITE( UNIT = stdout, &
-         & FMT = '(/,5X,"gamma-point specific algorithms are used")' )
-    !
-    ! call to void routine for user defined / plugin patches initializations
-    !
-    CALL plugin_initialization()
-    !
-    CALL check_stop_init()
-    !
-    IF (ionode) CALL create_socket(srvaddress)
-    !
-    driver_loop: DO
-       !
-       IF (ionode) CALL readbuffer(socket, header, MSGLEN)
-       CALL mp_bcast(header, ionode_id, intra_image_comm)
-       !
-       IF (ionode) write(*,*) " @ DRIVER MODE: Message from server: ", trim(header)
-       !
-       SELECT CASE (trim(header))
-       CASE("STATUS")
-          !
-          IF (ionode) THEN  
-             IF (hasdata) THEN
-                CALL writebuffer(socket,"HAVEDATA    ",MSGLEN)
-             ELSE IF (isinit) THEN
-                CALL writebuffer(socket,"READY       ",MSGLEN)
-             ELSE IF (.not. isinit) THEN
-                CALL writebuffer(socket,"NEEDINIT    ",MSGLEN)
-             ELSE
-                exit_status = 101
-                RETURN
-             END IF
-          END IF
-          !
-       CASE("INIT")
-          CALL driver_init()
-          isinit=.true.
-          !
-       CASE("POSDATA")
-          CALL driver_posdata()
-          hasdata=.true.
-          !
-       CASE("GETFORCE")
-          CALL driver_getforce()
-          ! ... resets init to get replica index again at next step
-          isinit = .false.
-          hasdata=.false.
-          !
-       CASE DEFAULT
-          exit_status = 102
-          RETURN
-       END SELECT
-       !
-    END DO driver_loop
-    !
+  !
+  omega_reset = .0
+  dist_ang_reset = .0
+  omega_old = .0
+  at_old = .0
+  !
+  lscf      = .true.
+  lforce    = .true.
+  lstres    = .true.
+  lmd       = .true.
+  lmovecell = .true.
+  !
+  exit_status = 0
+  IF ( ionode ) WRITE( unit = stdout, FMT = 9010 ) ntypx, npk, lmaxx
+  !
+  IF (ionode) CALL plugin_arguments()
+  CALL plugin_arguments_bcast( ionode_id, intra_image_comm )
+  !
+  ! ... needs to come before iosys() so some input flags can be
+  !     overridden without needing to write PWscf specific code.
+  !
+  ! ... convert to internal variables
+  !
+  CALL iosys()
+  !
+  IF ( gamma_only ) WRITE( UNIT = stdout, &
+       & FMT = '(/,5X,"gamma-point specific algorithms are used")' )
+  !
+  ! call to void routine for user defined / plugin patches initializations
+  !
+  CALL plugin_initialization()
+  !
+  CALL check_stop_init()
+  !
+  ! ... We do a fake run so that the G vectors are initialized
+  ! ... based on the pw input. This is needed to guarantee smooth energy
+  ! ... upon PW restart in NPT runs. Probably can be done in a smarter way
+  ! ... but we have to figure out how...
+  !
+  call setup()
+  call init_run()
+  call electrons()
+  call update_file()
+  !
+  IF (ionode) CALL create_socket(srvaddress)
+  !
+  driver_loop: DO
+     !
+     IF (ionode) CALL readbuffer(socket, header, MSGLEN)
+     CALL mp_bcast(header, ionode_id, intra_image_comm)
+     !
+     IF (ionode) write(*,*) " @ DRIVER MODE: Message from server: ", trim(header)
+     !
+     SELECT CASE (trim(header))
+     CASE("STATUS")
+        !
+        IF (ionode) THEN  
+           IF (hasdata) THEN
+              CALL writebuffer(socket,"HAVEDATA    ",MSGLEN)
+           ELSE IF (isinit) THEN
+              CALL writebuffer(socket,"READY       ",MSGLEN)
+           ELSE IF (.not. isinit) THEN
+              CALL writebuffer(socket,"NEEDINIT    ",MSGLEN)
+           ELSE
+              exit_status = 129
+              RETURN
+           END IF
+        END IF
+        !
+     CASE("INIT")
+        CALL driver_init()
+        isinit=.true.
+        !
+     CASE("POSDATA")
+        CALL driver_posdata()
+        hasdata=.true.
+        !
+     CASE("GETFORCE")
+        CALL driver_getforce()
+        ! ... resets init to get replica index again at next step
+        isinit = .false.
+        hasdata=.false.
+        firststep = .false.
+        !
+     CASE DEFAULT
+        exit_status = 130
+        RETURN
+     END SELECT
+     !
+  END DO driver_loop
+  !
 9010 FORMAT( /,5X,'Current dimensions of program PWSCF are:', &
           & /,5X,'Max number of different atomic species (ntypx) = ',I2,&
           & /,5X,'Max number of k-points (npk) = ',I6,&
           & /,5X,'Max angular momentum in pseudopotentials (lmaxx) = ',i2)
-    !
-  END SUBROUTINE run_driver
+  !
+CONTAINS
   !
   !
   SUBROUTINE create_socket (srvaddress)
@@ -253,7 +258,7 @@ CONTAINS
     ! ... Initialize the G-Vectors when needed
     !
     lgreset = .false.
-    IF ( firststep .OR. lgreset ) THEN
+    IF ( lgreset ) THEN
        !
        ! ... Reinitialize the G-Vectors if the cell is changed
        !
@@ -264,6 +269,7 @@ CONTAINS
        ! ... Update only atomic position and potential from the history
        ! ... if the cell did not change too much
        !
+       ! IF (.NOT. firststep)
        CALL update_pot()
        CALL hinit1()
     END IF
@@ -387,7 +393,6 @@ CONTAINS
     !
     CALL clean_pw( .FALSE. )
     IF ( .NOT. firststep) CALL close_files(.TRUE.)
-    firststep = .false.
     !
     CALL init_run()
     !
@@ -399,4 +404,4 @@ CONTAINS
     !
   END SUBROUTINE reinitialize_g_vectors
   !
-END MODULE driver
+END SUBROUTINE run_driver
