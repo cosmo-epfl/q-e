@@ -37,9 +37,7 @@ SUBROUTINE run_driver ( srvaddress, exit_status )
   INTEGER, INTENT(OUT) :: exit_status
   CHARACTER(*), INTENT(IN) :: srvaddress
   INTEGER, PARAMETER :: MSGLEN=12
-  REAL*8, PARAMETER :: gvec_ang_tol  = 1.0D-1, &
-                       gvec_dist_tol = 1.0D-1, &
-                       gvec_omega_tol= 1.0D-1
+  REAL*8, PARAMETER :: gvec_omega_tol= 1.0D-1
   LOGICAL :: isinit=.false., hasdata=.false., firststep=.true., exst, lgreset
   CHARACTER*12 :: header
   CHARACTER*1024 :: parbuffer
@@ -67,11 +65,6 @@ SUBROUTINE run_driver ( srvaddress, exit_status )
   ! ..      to return a different value for different reasons)
   ! ... Will be eventually merged with NEB
   !
-  !
-  omega_reset = .0
-  dist_ang_reset = .0
-  omega_old = .0
-  at_old = .0
   !
   lscf      = .true.
   lforce    = .true.
@@ -106,10 +99,11 @@ SUBROUTINE run_driver ( srvaddress, exit_status )
   ! ... upon PW restart in NPT runs. Probably can be done in a smarter way
   ! ... but we have to figure out how...
   !
-  call setup()
-  call init_run()
-  call electrons()
-  call update_file()
+  ! call setup()
+  ! call init_run()
+  CALL initialize_g_vectors
+  CALL electrons()
+  CALL update_file()
   !
   IF (ionode) CALL create_socket(srvaddress)
   !
@@ -248,28 +242,21 @@ CONTAINS
     ! ... Check if the cell is changed too much and in that case reset the
     ! ... g-vectors
     !
-    CALL cell2dist_ang(dist_ang, cellh)
-    lgreset = &
-         (( ABS ( omega_reset - omega ) / omega .GT. gvec_omega_tol ) .OR. &
-         ( ANY ( ABS ( dist_ang(1:3) - dist_ang_reset(1:3) ) / &
-         MAXVAL ( dist_ang(1:3) ) .GT. gvec_dist_tol)) .OR. &
-         ( ANY ( ABS ( dist_ang(4:6) - dist_ang_reset(4:6) ) .GT. gvec_ang_tol)))
+    lgreset = ( ABS ( omega_reset - omega ) / omega .GT. gvec_omega_tol )
     !
     ! ... Initialize the G-Vectors when needed
     !
-    lgreset = .false.
     IF ( lgreset ) THEN
        !
        ! ... Reinitialize the G-Vectors if the cell is changed
        !
-       CALL reinitialize_g_vectors()
+       CALL initialize_g_vectors()
        !
     ELSE
        !
        ! ... Update only atomic position and potential from the history
        ! ... if the cell did not change too much
        !
-       ! IF (.NOT. firststep)
        CALL update_pot()
        CALL hinit1()
     END IF
@@ -324,24 +311,6 @@ CONTAINS
   END SUBROUTINE driver_getforce
   !
   !
-  SUBROUTINE cell2dist_ang(dist_ang, latvec)
-    !
-    ! ... This subroutine will generate the angdeg represenation of the cell
-    ! ... from the lattice vectors
-    !
-    implicit none
-    real(8):: dist_ang(6),latvec(3,3),pi,convang
-    pi=acos(-1.d0)
-    convang=180.d0/pi
-    dist_ang(1)=sqrt(dot_product(latvec(:,1),latvec(:,1)))
-    dist_ang(2)=sqrt(dot_product(latvec(:,2),latvec(:,2)))
-    dist_ang(3)=sqrt(dot_product(latvec(:,3),latvec(:,3)))
-    dist_ang(4)=acos(dot_product(latvec(:,2),latvec(:,3))/(dist_ang(2)*dist_ang(3)))*convang
-    dist_ang(5)=acos(dot_product(latvec(:,3),latvec(:,1))/(dist_ang(3)*dist_ang(1)))*convang
-    dist_ang(6)=acos(dot_product(latvec(:,1),latvec(:,2))/(dist_ang(1)*dist_ang(2)))*convang
-  END SUBROUTINE cell2dist_ang
-  !
-  !
   SUBROUTINE read_and_share()
     ! ... First reads cell and the number of atoms
     !
@@ -375,7 +344,7 @@ CONTAINS
   END SUBROUTINE read_and_share
   !
   !
-  SUBROUTINE reinitialize_g_vectors()
+  SUBROUTINE initialize_g_vectors()
     !
     IF (ionode) THEN
        IF (firststep) WRITE(*,*) " @ DRIVER MODE: initialize G-vectors "
@@ -383,9 +352,6 @@ CONTAINS
     END IF
     !
     ! ... Keep trace of the last time the gvectors have been initialized
-    !
-    omega_reset = omega
-    dist_ang_reset = dist_ang
     !
     IF ( firststep ) CALL setup()
     !
@@ -402,6 +368,9 @@ CONTAINS
     CALL mp_bcast( omega_old, ionode_id, intra_image_comm )
     CALL mp_bcast( bg,        ionode_id, intra_image_comm )
     !
-  END SUBROUTINE reinitialize_g_vectors
+    omega_reset = omega
+    dist_ang_reset = dist_ang
+    !
+  END SUBROUTINE initialize_g_vectors
   !
 END SUBROUTINE run_driver
