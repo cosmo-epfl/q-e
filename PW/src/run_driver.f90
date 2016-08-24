@@ -13,7 +13,7 @@ SUBROUTINE run_driver ( srvaddress, exit_status )
   USE mp_images,        ONLY : intra_image_comm
   USE io_files,         ONLY : iunupdate, seqopn
   USE mp_global,        ONLY : mp_startup, mp_bcast, mp_global_end, intra_image_comm
-  USE control_flags,    ONLY : gamma_only, conv_elec, istep, conv_ions, ethr, &
+  USE control_flags,    ONLY : gamma_only, conv_elec, istep, ethr, &
                                lscf, lmd
   USE cellmd,           ONLY : lmovecell
   USE force_mod,        ONLY : lforce, lstres
@@ -109,38 +109,40 @@ SUBROUTINE run_driver ( srvaddress, exit_status )
   !
   driver_loop: DO
      !
-     IF (ionode) CALL readbuffer(socket, header, MSGLEN)
-     CALL mp_bcast(header, ionode_id, intra_image_comm)
+     IF ( ionode ) CALL readbuffer(socket, header, MSGLEN)
+     CALL mp_bcast( header, ionode_id, intra_image_comm )
      !
-     IF (ionode) write(*,*) " @ DRIVER MODE: Message from server: ", trim(header)
+     IF ( ionode ) write(*,*) " @ DRIVER MODE: Message from server: ", trim( header )
      !
-     SELECT CASE (trim(header))
-     CASE("STATUS")
+     SELECT CASE ( trim( header ) )
+     CASE( "STATUS" )
         !
         IF (ionode) THEN  
            IF (hasdata) THEN
-              CALL writebuffer(socket,"HAVEDATA    ",MSGLEN)
+              CALL writebuffer( socket, "HAVEDATA    ", MSGLEN )
            ELSE IF (isinit) THEN
-              CALL writebuffer(socket,"READY       ",MSGLEN)
+              CALL writebuffer( socket, "READY       ", MSGLEN )
            ELSE IF (.not. isinit) THEN
-              CALL writebuffer(socket,"NEEDINIT    ",MSGLEN)
+              CALL writebuffer( socket, "NEEDINIT    ", MSGLEN )
            ELSE
               exit_status = 129
               RETURN
            END IF
         END IF
         !
-     CASE("INIT")
+     CASE( "INIT" )
         CALL driver_init()
         isinit=.true.
         !
-     CASE("POSDATA")
+     CASE( "POSDATA" )
         CALL driver_posdata()
         hasdata=.true.
         !
-     CASE("GETFORCE")
+     CASE( "GETFORCE" )
         CALL driver_getforce()
+        !
         ! ... resets init to get replica index again at next step
+        !
         isinit = .false.
         hasdata=.false.
         firststep = .false.
@@ -177,13 +179,14 @@ CONTAINS
        inet = 0
        write(*,*) " @ DRIVER MODE: Connecting to ", trim(address), " using UNIX socket"
     ELSE
-       read(srvaddress(field_sep_pos+1:),*) port
+       read ( srvaddress ( field_sep_pos+1 : ), * ) port
        inet = 1
-       write(*,*) " @ DRIVER MODE: Connecting to ", trim(address),':',srvaddress(field_sep_pos+1:)
+       write(*,*) " @ DRIVER MODE: Connecting to ", trim ( address ), &
+                  ":", srvaddress ( field_sep_pos+1 : )
     END IF
     !
     ! ... Create the socket
-    CALL open_socket(socket, inet, port, trim(address)//achar(0))
+    CALL open_socket ( socket, inet, port, trim(address)//achar(0) )
     !
   END SUBROUTINE create_socket
   !
@@ -191,8 +194,9 @@ CONTAINS
   SUBROUTINE driver_init()
     !
     ! ... Check if the replica id (rid) is the same as in the last run
-    IF (ionode) CALL readbuffer(socket, rid) 
-    CALL mp_bcast(rid, ionode_id, intra_image_comm)
+    !
+    IF ( ionode ) CALL readbuffer( socket, rid ) 
+    CALL mp_bcast( rid, ionode_id, intra_image_comm )
     !
     IF ( rid .NE. rid_old .AND. .NOT. firststep ) THEN
        !
@@ -204,15 +208,15 @@ CONTAINS
        CALL close_files(.TRUE.)
     END IF
     !
-    IF (ionode) WRITE(*,*) " @ DRIVER MODE: Receiving replica", rid, rid_old
+    IF ( ionode ) WRITE(*,*) " @ DRIVER MODE: Receiving replica", rid, rid_old
     rid_old = rid
     !
-    IF (ionode) THEN
+    IF ( ionode ) THEN
        !
        ! ... Length of parameter string -- ignored at present!
        !
-       CALL readbuffer(socket, nat) 
-       CALL readbuffer(socket, parbuffer, nat)
+       CALL readbuffer( socket, nat ) 
+       CALL readbuffer( socket, parbuffer, nat )
     END IF
     !
   END SUBROUTINE driver_init
@@ -306,7 +310,6 @@ CONTAINS
     nat = 0
     IF ( ionode ) CALL writebuffer( socket, nat )
     CALL punch( 'config' )
-    conv_ions = .true.
     !
   END SUBROUTINE driver_getforce
   !
@@ -348,7 +351,8 @@ CONTAINS
     !
     IF (ionode) THEN
        IF (firststep) WRITE(*,*) " @ DRIVER MODE: initialize G-vectors "
-       IF (lgreset  ) WRITE(*,*) " @ DRIVER MODE: reinitialize G-vectors "
+       IF (lgreset .AND. .NOT. firststep ) WRITE(*,*) &
+            " @ DRIVER MODE: reinitialize G-vectors "
     END IF
     !
     ! ... Keep trace of the last time the gvectors have been initialized
